@@ -52,11 +52,13 @@ export class WebcamPeer {
     const x0 = Math.max(0, (b.x - b.w * pad) * vw), y0 = Math.max(0, (b.y - b.h * pad) * vh);
     const x1 = Math.min(vw, (b.x + b.w * (1 + pad)) * vw), y1 = Math.min(vh, (b.y + b.h * (1 + pad)) * vh);
     const c = document.createElement("canvas");
-    const scale = Math.min(1, 1024 / (x1 - x0));
+    const scale = Math.min(1, 640 / (x1 - x0)); // a 12x12 board needs no more; smaller is quicker to read
     c.width = Math.round((x1 - x0) * scale);
     c.height = Math.round((y1 - y0) * scale);
-    c.getContext("2d").drawImage(this.video, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
-    return c.toDataURL("image/jpeg", 0.85);
+    const ctx = c.getContext("2d");
+    ctx.drawImage(this.video, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+    binarise(ctx, c.width, c.height);
+    return c.toDataURL("image/png");
   }
   // Dim everything but the region that capture() would send.
   drawOverlay() {
@@ -87,4 +89,38 @@ export class WebcamPeer {
     ctx.restore();
   }
   publish() {}
+}
+
+// Turn the crop into clean black and white. The threshold is local (each pixel against the mean of a window
+// around it, via an integral image), so glare and uneven screen brightness do not swallow half the board.
+function binarise(ctx, w, h) {
+  const img = ctx.getImageData(0, 0, w, h), d = img.data;
+  const grey = new Float32Array(w * h), sum = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4, g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    grey[y * w + x] = g;
+    sum[(y + 1) * (w + 1) + x + 1] = g + sum[y * (w + 1) + x + 1] + sum[(y + 1) * (w + 1) + x] - sum[y * (w + 1) + x];
+  }
+  // Global threshold (Otsu) keeps big black shapes solid; the local one rescues dark pixels washed out by glare.
+  const hist = new Float64Array(256);
+  for (const g of grey) hist[g | 0]++;
+  let total = w * h, sumAll = 0, sumB = 0, wB = 0, best = 0, T = 128;
+  for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+  for (let i = 0; i < 256; i++) {
+    wB += hist[i]; if (!wB) continue;
+    const wF = total - wB; if (!wF) break;
+    sumB += i * hist[i];
+    const mB = sumB / wB, mF = (sumAll - sumB) / wF, v = wB * wF * (mB - mF) ** 2;
+    if (v > best) { best = v; T = i; }
+  }
+  const r = Math.max(8, (Math.min(w, h) / 10) | 0), bias = 25; // window ~ one board cell
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(w, x + r + 1), y1 = Math.min(h, y + r + 1);
+    const mean = (sum[y1 * (w + 1) + x1] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0] + sum[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+    const g = grey[y * w + x];
+    const v = g < T || g < mean - bias ? 0 : 255;
+    const i = (y * w + x) * 4;
+    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
 }

@@ -125,7 +125,7 @@ export class WorldView {
     let sky = new THREE.Color(known("suns") ? P.sky : 0xffffff);
     if (v.suns === "no sun") sky = new THREE.Color(0x2f2b55);
     if (v.suns === "two suns") sky.lerp(new THREE.Color(0xf3d2a0), 0.4);
-    if (v.suns === "three suns") sky.lerp(new THREE.Color(0xf0b6b0), 0.5);
+    if (v.suns === "three suns") sky.lerp(new THREE.Color(0xff9a5c), 0.65);
     if (v.weather === "snow") sky.lerp(new THREE.Color(0xdfe4ea), 0.6);
     this.scene.background = sky;
     this.scene.fog.color = sky;
@@ -144,6 +144,7 @@ export class WorldView {
     };
     const groundColour = new THREE.Color(!known("ground") ? 0xffffff : v.ground === "water" ? 0x6fb7d9 : P.ground);
     if (v.weather === "snow") groundColour.lerp(new THREE.Color(0xffffff), 0.75);
+    if (v.suns === "three suns") groundColour.lerp(new THREE.Color(0xd98a4a), 0.5); // scorched
     if (v.suns === "no sun") groundColour.multiplyScalar(0.6);
     const geo = new THREE.PlaneGeometry(70, 70, 56, 56);
     const gp = geo.attributes.position;
@@ -154,14 +155,14 @@ export class WorldView {
     ground.receiveShadow = true;
 
     if (v.ground === "mountains") for (let i = 0; i < 16; i++) {
-      const hgt = rand(5, 13), x = -26 + i * 3.5 + rand(-1, 1), z = rand(-26, -16);
+      const hgt = rand(7, 17), x = -26 + i * 3.5 + rand(-1, 1), z = rand(-26, -16);
       const m = add(new THREE.Mesh(new THREE.ConeGeometry(rand(3, 6), hgt, (rand(5, 8) | 0)), flat(new THREE.Color(i % 2 ? P.rock : P.leaf).lerp(sky, 0.35))));
       m.position.set(x, hgt / 2 - 0.5, z);
       m.rotation.y = rand(0, 6);
     }
     if (v.ground === "holes") {
       const rim = flat(new THREE.Color(P.ground).multiplyScalar(0.8)), pit = flat(0x2a2540);
-      for (let i = 0; i < 14; i++) {
+      for (let i = 0; i < 30; i++) {
         const r = rand(0.5, 1.4), x = rand(-13, 13), z = rand(-13, -1);
         const h = add(new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.8, 0.5, 9), pit));
         h.position.set(x, -0.24, z);
@@ -248,16 +249,18 @@ export class WorldView {
     }
 
     // Inhabitants: little creatures that hop (with a proper squash and stretch) or drift when weightless.
+    // One set of geometries and materials for every being: a crowd of hundreds is then cheap to build and upload.
+    const skinMat = flat(P.rock), darkMat = flat(0x3a3560);
+    const torsoGeo = new THREE.BoxGeometry(0.6, 0.8, 0.4), headGeo = new THREE.IcosahedronGeometry(0.3, 0), legGeo = new THREE.BoxGeometry(0.16, 0.25, 0.3);
     const being = (size, x, z) => {
       const body = new THREE.Group();
-      const c = flat(P.rock), dark = flat(0x3a3560);
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), c);
+      const torso = new THREE.Mesh(torsoGeo, skinMat);
       torso.position.y = 0.6;
-      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), c);
+      const head = new THREE.Mesh(headGeo, skinMat);
       head.position.y = 1.25;
       body.add(torso, head);
       for (const sx of [-0.15, 0.15]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.25, 0.3), dark);
+        const leg = new THREE.Mesh(legGeo, darkMat);
         leg.position.set(sx, 0.12, 0.03);
         body.add(leg);
       }
@@ -279,11 +282,11 @@ export class WorldView {
     };
     const place = (size, x, z) => { const b = being(size, x, z); b.position.set(x, 0, z); add(b); };
     reseed(5);
-    if (v.inhabitants === "one giant") place(5, 7, -13);
+    if (v.inhabitants === "one giant") place(7, 3, -12); // towers over the trees, head nearly out of frame
     if (v.inhabitants === "a few big ones") for (let i = 0; i < 3; i++) place(2.2, -8 + i * 7, -9 - i);
-    if (v.inhabitants === "countless tiny ones") for (let k = 0; k < 6; k++) {
+    if (v.inhabitants === "countless tiny ones") for (let k = 0; k < 10; k++) {
       const cx = rand(-13, 13), cz = rand(-14, -2);
-      for (let i = 0; i < 15; i++) place(0.35, cx + rand(-2.5, 2.5), cz + rand(-2, 2));
+      for (let i = 0; i < 25; i++) place(0.35, cx + rand(-2.5, 2.5), cz + rand(-2, 2));
     }
 
     // Weather
@@ -294,8 +297,8 @@ export class WorldView {
       let x = rand(-20, 20);
       this.movers.push((t) => { x += (7 + gust(t) * 7) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
     }
-    if (v.weather === "rocks") for (let i = 0; i < 12; i++) {
-      const r = rand(0.3, 0.7);
+    if (v.weather === "rocks") for (let i = 0; i < 24; i++) {
+      const r = rand(0.4, 1.1);
       const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(0x8c8498)));
       this.movers.push(this.rock(m, r, GRAVITY.down, (p, vel) => { p.set(rand(-12, 12), rand(12, 18), rand(-12, -2)); vel.set(rand(-0.5, 0.5), 0, 0); }, { respawnWhenResting: true }));
     }
@@ -448,8 +451,10 @@ export class Scene extends WorldView {
     // Centred above the head; slides sideways only as far as needed to stay on the stage.
     const left = Math.min(Math.max(x - bw / 2, M), W - bw - M);
     const top = Math.max(y - GAP - bh, M);
-    this.bubble.style.left = `${left}px`;
-    this.bubble.style.top = `${top}px`;
+    this.bubble.style.left = `${Math.round(left)}px`;
+    this.bubble.style.top = `${Math.round(top)}px`;
+    // The tail keeps pointing at the head even when the bubble has slid sideways to stay on the stage.
+    this.bubble.style.setProperty("--tail", `${Math.min(Math.max(x - left, 24), bw - 24)}px`);
   }
 
   tick(t) {

@@ -4,7 +4,8 @@ import { WebcamPeer } from "./peer.js";
 import { designFields, readFrames, guessSentence, loadKey } from "./api.js";
 
 // Laptop 1 ("a") is given a sentence and has its saucers cut one crop-circle field per
-// word, with at most 2 lines, 2 circles and a cow each. Laptop 2 ("b") watches through
+// word, with at most 3 strokes (lines or arcs), 2 circles and 2 cows each (see RULES in
+// field.js and api.js). Laptop 2 ("b") watches through
 // its webcam, keeps a photo of each finished field, and guesses the words. Space (or the
 // last word) ends the run: laptop 1 shows 🏁 and reveals the sentence and every field.
 const q = new URLSearchParams(location.search);
@@ -90,7 +91,7 @@ async function send() {
     const out = await retry("designing the fields", () => designFields({ sentence, words }));
     designs = words.map((word, i) => ({ word, idea: out.fields?.[i]?.idea ?? "", ...normaliseDesign(out.fields?.[i]) }));
   } catch { status("couldn't design the fields. Restart the app to try again."); return; }
-  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${d.lines.length} lines, ${d.circles.length} circles${d.cow ? ", a cow" : ""}`));
+  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${d.lines.length} lines, ${d.arcs.length} arcs, ${d.circles.length} circles, ${d.cows.length} cows`));
   status("");
 
   for (let i = 0; i < designs.length && !stopped; i++) {

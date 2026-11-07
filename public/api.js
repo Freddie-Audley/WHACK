@@ -67,8 +67,11 @@ const text = (t) => ({ type: "text", text: t });
 const RULES = `The rules, which both of you know:
 - One field per word, in order. A field is cut fresh for each word.
 - A field is a wheat field seen from above at night, 160 wide and 100 tall, with (0,0) at the top left.
-- In each field the saucers can cut at most 2 straight lines and at most 2 circles, and lower one cow. Nothing else: no letters, digits or other shapes.
-- A line is a straight path, about 3 wide. A circle is either a filled disc or a ring, with a radius from 5 to 45. The cow stands somewhere in the field, facing left or right.`;
+- In each field the saucers can cut at most 3 strokes (each a straight line or an arc) and at most 2 circles, and set down at most 2 cows. Nothing else: no letters, digits or other shapes.
+- A line is a straight cut about 3 wide.
+- An arc is part of a ring: a centre, a radius from 6 to 45, and the compass angles it runs between, clockwise, where 0 is the top, 90 the right, 180 the bottom and 270 the left. So 120 to 240 is a smile, and 270 to 90 is a rainbow.
+- A circle is a filled disc or a ring, with a radius from 4 to 45.
+- A cow is a black-and-white cow seen from the side, about 20 wide and 15 tall, standing somewhere in the field facing left or right.`;
 
 const num = { type: "number" };
 
@@ -82,7 +85,7 @@ ${RULES}
 
 Your ${words.length} fields: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
 
-Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a mouth), arrows and pointing, sizes, counting, positions, and the cow as an animal, a person or a pointer. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
+Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use simple pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave), arrows (three lines), pointing, sizes, counting, positions, and cows as animals, people, a pair or pointers. You don't have to use everything: fewer, bigger shapes read best. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
 Keep shapes inside the field and big enough to see from across a room.
 For each field also give "idea": a few words on what you mean it to show.`,
     {
@@ -99,18 +102,20 @@ For each field also give "idea": a few words on what you mean it to show.`,
                 type: "array",
                 items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
               },
+              arcs: {
+                type: "array",
+                items: { type: "object", properties: { x: num, y: num, r: num, from: num, to: num }, required: ["x", "y", "r", "from", "to"], additionalProperties: false },
+              },
               circles: {
                 type: "array",
                 items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
               },
-              cow: {
-                type: "object",
-                properties: { use: { type: "boolean" }, x: num, y: num, facing: { type: "string", enum: ["left", "right"] } },
-                required: ["use", "x", "y", "facing"],
-                additionalProperties: false,
+              cows: {
+                type: "array",
+                items: { type: "object", properties: { x: num, y: num, facing: { type: "string", enum: ["left", "right"] } }, required: ["x", "y", "facing"], additionalProperties: false },
               },
             },
-            required: ["word", "idea", "lines", "circles", "cow"],
+            required: ["word", "idea", "lines", "arcs", "circles", "cows"],
             additionalProperties: false,
           },
         },
@@ -129,7 +134,7 @@ export async function readFrames({ frames }) {
   content.push(text(`These ${frames.length} webcam frames are in time order, about a second apart. For each frame, say what the other laptop's screen shows:
 - "fresh": a dark wheat field with no glowing marks and no flying saucer
 - "cutting": one or more flying saucers are over the field
-- "done": glowing lines, circles or a cow on the field, and no flying saucer anywhere
+- "done": glowing lines, curves or circles, or cows, on the field, and no flying saucer anywhere
 - "end": a big chequered finish flag on white
 - "other": anything else, or you can't tell
 Ignore everything around the screen.`));

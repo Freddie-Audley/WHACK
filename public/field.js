@@ -5,7 +5,10 @@ export const FW = 160, FH = 100;
 const CUT = 3.4;  // width of a cut path, in field units
 const ALT = 14;   // how high the saucers hover above their beam spot
 const K = 1.6;    // saucer size
-const COW = "🐄"; // faces left as drawn
+
+// The rules: what one field may hold. Enough for an arrow, a smile, a face or a pair of
+// cows, too little to draw a detailed picture or write a word.
+export const RULES = { strokes: 3, circles: 2, cows: 2 };
 
 let SPEED = 1;
 export const setSpeed = (s) => { SPEED = s > 0 ? s : 1; };
@@ -27,25 +30,45 @@ function tween(ms, fn, easing = (p) => p) {
   });
 }
 
-// Whatever the model sent, cut down to the rules: at most 2 lines, 2 circles and a cow.
+const list = (a) => (Array.isArray(a) ? a : []);
+const deg = (v) => ((Number.isFinite(+v) ? +v : 0) % 360 + 360) % 360;
+
+// Whatever the model sent, cut down to the rules. Lines are kept before arcs if there
+// are more than 3 strokes in total.
 export function normaliseDesign(d) {
+  const lines = list(d?.lines).slice(0, RULES.strokes).map((l) => ({
+    x1: clamp(l?.x1, 0, FW), y1: clamp(l?.y1, 0, FH), x2: clamp(l?.x2, 0, FW), y2: clamp(l?.y2, 0, FH),
+  }));
+  const arcs = list(d?.arcs).slice(0, RULES.strokes - lines.length).map((a) => {
+    const from = deg(a?.from);
+    const sweep = Math.max(15, (deg(a?.to) - from + 360) % 360 || 360);
+    return { x: clamp(a?.x, 0, FW), y: clamp(a?.y, 0, FH), r: clamp(a?.r, 6, 45), from, sweep };
+  });
   return {
-    lines: (Array.isArray(d?.lines) ? d.lines : []).slice(0, 2).map((l) => ({
-      x1: clamp(l?.x1, 0, FW), y1: clamp(l?.y1, 0, FH), x2: clamp(l?.x2, 0, FW), y2: clamp(l?.y2, 0, FH),
+    lines,
+    arcs,
+    circles: list(d?.circles).slice(0, RULES.circles).map((c) => ({
+      x: clamp(c?.x, 0, FW), y: clamp(c?.y, 0, FH), r: clamp(c?.r, 4, 45), filled: !!c?.filled,
     })),
-    circles: (Array.isArray(d?.circles) ? d.circles : []).slice(0, 2).map((c) => ({
-      x: clamp(c?.x, 0, FW), y: clamp(c?.y, 0, FH), r: clamp(c?.r, 5, 45), filled: !!c?.filled,
+    cows: list(d?.cows).slice(0, RULES.cows).map((c) => ({
+      x: clamp(c?.x, 11, FW - 11), y: clamp(c?.y, 9, FH - 9), facing: c?.facing === "right" ? "right" : "left",
     })),
-    cow: d?.cow?.use ? { x: clamp(d.cow.x, 6, FW - 6), y: clamp(d.cow.y, 6, FH - 6), facing: d.cow.facing === "right" ? "right" : "left" } : null,
   };
 }
 
 // The finished field, for thumbnails.
 export const finishedScene = (d) => ({
-  marks: [...d.lines.map((l) => ({ type: "line", ...l, t: 1 })), ...d.circles.map((c) => ({ type: "circle", ...c, t: 1 }))],
-  cow: d.cow ? { ...d.cow, h: 0 } : null,
+  marks: [
+    ...d.lines.map((l) => ({ type: "line", ...l, t: 1 })),
+    ...d.arcs.map((a) => ({ type: "arc", ...a, t: 1 })),
+    ...d.circles.map((c) => ({ type: "circle", ...c, t: 1 })),
+  ],
+  cows: d.cows.map((c) => ({ ...c, h: 0 })),
   ufos: [], sparks: [], fade: 1,
 });
+
+// Compass degrees (0 at the top, clockwise) to canvas radians.
+const rad = (d) => ((d - 90) * Math.PI) / 180;
 
 // ---- Drawing ----------------------------------------------------------------
 
@@ -92,6 +115,8 @@ function markPath(ctx, m, X, Y, s) {
   if (m.type === "line") {
     ctx.moveTo(X(m.x1), Y(m.y1));
     ctx.lineTo(X(lerp(m.x1, m.x2, m.t)), Y(lerp(m.y1, m.y2, m.t)));
+  } else if (m.type === "arc") {
+    ctx.arc(X(m.x), Y(m.y), m.r * s, rad(m.from), rad(m.from + m.sweep * Math.max(0.001, m.t)));
   } else if (m.filled) {
     ctx.arc(X(m.x), Y(m.y), Math.max(0.01, m.r * m.t * s), 0, Math.PI * 2);
   } else {
@@ -127,33 +152,83 @@ function drawMarks(ctx, scene, X, Y, s) {
   ctx.restore();
 }
 
+// A solid black-and-white cow seen from the side, facing left, about 18 × 12 in its own
+// units with (0,0) at the middle of its body. Drawn with shapes, not an emoji, so it
+// looks the same on every computer.
+const INK = "#141414", HIDE = "#fbfaf4", PINK = "#f2a3b5", HORN = "#efe2bf";
+function cowShape(ctx) {
+  ctx.lineWidth = 0.5;
+  ctx.lineJoin = ctx.lineCap = "round";
+  ctx.strokeStyle = INK;
+  const blob = (x, y, rx, ry, fill, rot = 0) => {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.stroke();
+  };
+  // Tail.
+  ctx.beginPath();
+  ctx.moveTo(5.6, -2.2);
+  ctx.quadraticCurveTo(7.6, -1, 7.1, 2.2);
+  ctx.stroke();
+  blob(7.1, 2.6, 0.55, 0.8, INK);
+  // Legs, far ones a touch darker.
+  for (const [x, far] of [[-3.4, true], [3.4, true], [-4.6, false], [2.2, false]]) {
+    ctx.fillStyle = far ? "#dcdcd4" : HIDE;
+    ctx.beginPath();
+    ctx.roundRect(x - 0.7, 1.2, 1.4, 4.4, 0.4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.fillRect(x - 0.7, 4.8, 1.4, 0.8);
+  }
+  // Udder.
+  blob(1.1, 3.1, 1.2, 0.8, PINK);
+  // Body with patches.
+  ctx.beginPath();
+  ctx.roundRect(-6, -3.2, 12, 6, 2.6);
+  ctx.fillStyle = HIDE;
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = INK;
+  for (const [x, y, rx, ry, r] of [[1.6, -1.6, 2.4, 1.7, 0.3], [-2.8, 1.4, 1.8, 1.3, -0.2], [5.3, 0.4, 1.4, 1.9, 0]]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.stroke();
+  // Horns, ear, head, muzzle, eye.
+  blob(-6.4, -5.6, 0.45, 1.1, HORN, 0.5);
+  blob(-8.3, -5.5, 0.45, 1.1, HORN, -0.4);
+  blob(-5.1, -3.9, 1.4, 0.65, HIDE, -0.35);
+  blob(-7.5, -2.6, 2.5, 2.5, HIDE);
+  blob(-7, -3.6, 1.1, 0.9, INK, 0.3);
+  blob(-8.9, -1.2, 1.7, 1.3, PINK);
+  ctx.fillStyle = INK;
+  for (const x of [-9.6, -8.3]) { ctx.beginPath(); ctx.arc(x, -1.3, 0.3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(-6.9, -3.75, 0.28, 0, Math.PI * 2); ctx.fill();
+}
+
+const COW_SCALE = 1.1; // cow units to field units: about 20 wide
+
 function drawCow(ctx, cow, X, Y, s, alpha = 1) {
   const lift = cow.h * ALT * 0.85;
-  const size = 16 * s * (0.6 + 0.4 * (1 - cow.h));
+  const k = COW_SCALE * s * (0.6 + 0.4 * (1 - cow.h));
   ctx.save();
   ctx.globalAlpha = alpha;
-  // Moonlight on the cow, so it reads on dark wheat.
-  const glow = ctx.createRadialGradient(X(cow.x), Y(cow.y), 0, X(cow.x), Y(cow.y), 12 * s);
-  glow.addColorStop(0, `rgba(255,250,225,${0.38 * (1 - cow.h * 0.6)})`);
-  glow.addColorStop(1, "rgba(255,250,225,0)");
-  ctx.fillStyle = glow;
+  // Shadow on the wheat, under its hooves.
+  ctx.fillStyle = `rgba(0,0,0,${0.4 * (1 - cow.h * 0.7)})`;
   ctx.beginPath();
-  ctx.arc(X(cow.x), Y(cow.y), 12 * s, 0, Math.PI * 2);
-  ctx.fill();
-  // Shadow on the wheat.
-  ctx.fillStyle = `rgba(0,0,0,${0.35 * (1 - cow.h * 0.7)})`;
-  ctx.beginPath();
-  ctx.ellipse(X(cow.x), Y(cow.y) + 4.6 * s, 7 * s, 2 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(X(cow.x), Y(cow.y) + 5.4 * COW_SCALE * s, 9.4 * COW_SCALE * s, 2 * COW_SCALE * s, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.translate(X(cow.x), Y(cow.y - lift));
-  if (cow.facing === "right") ctx.scale(-1, 1);
   if (cow.h > 0) ctx.rotate(Math.sin(performance.now() / 260) * 0.12 * cow.h);
-  ctx.font = `${size}px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(255,255,255,0.35)";
-  ctx.shadowBlur = 1.5 * s;
-  ctx.fillText(COW, 0, 0);
+  ctx.scale(cow.facing === "right" ? -k : k, k);
+  cowShape(ctx);
   ctx.restore();
 }
 
@@ -250,7 +325,7 @@ export function drawScene(ctx, W, H, scene, now = 0, dt = 0, bg = null) {
   const { s, X, Y } = layout(W, H);
   if (bg) ctx.drawImage(bg, 0, 0, W, H); else drawGround(ctx, W, H);
   drawMarks(ctx, scene, X, Y, s);
-  if (scene.cow && scene.cow.h === 0) drawCow(ctx, scene.cow, X, Y, s, scene.fade);
+  for (const c of scene.cows) if (c.h === 0) drawCow(ctx, c, X, Y, s, scene.fade);
   // Saucer shadows on the wheat, washed out wherever a beam is shining.
   ctx.fillStyle = "rgba(0,0,0,0.28)";
   for (const u of scene.ufos) {
@@ -260,7 +335,7 @@ export function drawScene(ctx, W, H, scene, now = 0, dt = 0, bg = null) {
     ctx.fill();
   }
   for (const u of scene.ufos) if (u.beam) drawBeam(ctx, u, X, Y, s);
-  if (scene.cow && scene.cow.h > 0) drawCow(ctx, scene.cow, X, Y, s);
+  for (const c of scene.cows) if (c.h > 0) drawCow(ctx, c, X, Y, s);
   drawSparks(ctx, scene, X, Y, s, dt);
   for (const u of scene.ufos) drawSaucer(ctx, u, X, Y, s, now);
 }
@@ -271,7 +346,7 @@ export class Field {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
-    this.scene = { marks: [], cow: null, ufos: [], sparks: [], fade: 1 };
+    this.scene = { marks: [], cows: [], ufos: [], sparks: [], fade: 1 };
     this.last = performance.now();
     this.resize();
     addEventListener("resize", () => this.resize());
@@ -310,39 +385,58 @@ export class Field {
   }
 
   clear() {
-    Object.assign(this.scene, { marks: [], cow: null, ufos: [], fade: 1 });
+    Object.assign(this.scene, { marks: [], cows: [], ufos: [], fade: 1 });
   }
 
-  // Fly in, cut the design, fly off. One saucer cuts lines and lowers the cow, the other cuts circles.
+  // Fly in, cut the design, fly off. Up to three saucers work at once: one cuts the
+  // strokes (lines and arcs), one the circles, and one lowers the cows on its beam.
   async perform(d) {
     const sc = this.scene;
     const ufo = (x, y) => { const u = { x, y, beam: false, beamR: 0, phase: Math.random() * 6 }; sc.ufos.push(u); return u; };
     const fly = async (u, x, y) => {
       const x0 = u.x, y0 = u.y, dist = Math.hypot(x - x0, y - y0);
-      if (dist > 0.01) await tween(350 + dist * 13, (p) => { u.x = lerp(x0, x, p); u.y = lerp(y0, y, p); }, ease);
+      if (dist > 0.01) await tween(320 + dist * 11, (p) => { u.x = lerp(x0, x, p); u.y = lerp(y0, y, p); }, ease);
     };
     const exitY = (u) => (u.y < FH / 2 ? -14 : FH + 14);
+    const nothing = !d.lines.length && !d.arcs.length && !d.circles.length && !d.cows.length;
 
-    const lineShip = async () => {
+    const strokeShip = async () => {
+      if (!d.lines.length && !d.arcs.length && !nothing) return;
       const u = ufo(-28, 15 + Math.random() * 70);
       for (const l of d.lines) {
         await fly(u, l.x1, l.y1);
         const m = { type: "line", ...l, t: 0 };
         sc.marks.push(m);
         u.beam = true;
-        await tween(450 + Math.hypot(l.x2 - l.x1, l.y2 - l.y1) * 16, (p) => { m.t = p; u.x = lerp(l.x1, l.x2, p); u.y = lerp(l.y1, l.y2, p); });
+        await tween(400 + Math.hypot(l.x2 - l.x1, l.y2 - l.y1) * 13, (p) => { m.t = p; u.x = lerp(l.x1, l.x2, p); u.y = lerp(l.y1, l.y2, p); });
         u.beam = false;
       }
-      if (d.cow) {
-        await fly(u, d.cow.x, d.cow.y);
-        u.beam = true; u.beamR = 5;
-        sc.cow = { ...d.cow, h: 1 };
-        await tween(1700, (p) => { sc.cow.h = 1 - p; }, ease);
-        sc.cow.h = 0;
+      for (const a of d.arcs) {
+        const at = (deg) => [a.x + a.r * Math.cos(rad(deg)), a.y + a.r * Math.sin(rad(deg))];
+        await fly(u, ...at(a.from));
+        const m = { type: "arc", ...a, t: 0 };
+        sc.marks.push(m);
+        u.beam = true;
+        await tween(450 + (a.r * a.sweep * Math.PI / 180) * 13, (p) => { m.t = p; [u.x, u.y] = at(a.from + a.sweep * p); });
+        u.beam = false;
+      }
+      if (nothing) await fly(u, FW / 2, u.y); // an empty field: a slow fly-past
+      await fly(u, -28, exitY(u));
+    };
+
+    const cowShip = async () => {
+      if (!d.cows.length) return;
+      const u = ufo(FW / 2 + (Math.random() - 0.5) * 60, -30);
+      for (const c of d.cows) {
+        await fly(u, c.x, c.y);
+        u.beam = true; u.beamR = 6;
+        const cow = { ...c, h: 1 };
+        sc.cows.push(cow);
+        await tween(1400, (p) => { cow.h = 1 - p; }, ease);
+        cow.h = 0;
         u.beam = false; u.beamR = 0;
       }
-      if (!d.lines.length && !d.cow && !d.circles.length) await fly(u, FW / 2, u.y); // nothing to cut: a slow fly-past
-      await fly(u, -28, exitY(u));
+      await fly(u, u.x, -30);
     };
 
     const circleShip = async () => {
@@ -354,19 +448,19 @@ export class Field {
           await fly(u, c.x, c.y);
           sc.marks.push(m);
           u.beam = true;
-          await tween(700 + c.r * 28, (p) => { m.t = p; u.beamR = c.r * p; }, ease);
+          await tween(650 + c.r * 24, (p) => { m.t = p; u.beamR = c.r * p; }, ease);
         } else {
           await fly(u, c.x + c.r, c.y);
           sc.marks.push(m);
           u.beam = true;
-          await tween(700 + c.r * 50, (p) => { m.t = p; u.x = c.x + c.r * Math.cos(p * Math.PI * 2); u.y = c.y + c.r * Math.sin(p * Math.PI * 2); });
+          await tween(650 + c.r * 42, (p) => { m.t = p; u.x = c.x + c.r * Math.cos(p * Math.PI * 2); u.y = c.y + c.r * Math.sin(p * Math.PI * 2); });
         }
         u.beam = false; u.beamR = 0;
       }
       await fly(u, FW + 28, exitY(u));
     };
 
-    await Promise.all([lineShip(), circleShip()]);
+    await Promise.all([strokeShip(), circleShip(), cowShip()]);
     sc.ufos = [];
   }
 

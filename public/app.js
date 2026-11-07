@@ -289,6 +289,7 @@ addEventListener("error", (e) => log(`error: ${e.message} (${e.filename}:${e.lin
 addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message || e.reason} ${e.reason?.stack || ""}`));
 
 addEventListener("keydown", (e) => {
+  if (e.code === "KeyQ") { e.preventDefault(); window.__TAURI__?.core.invoke("quit"); return; }
   if (!t0) return; // still on the menu
   if (e.code === "KeyR" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (over) menu(); } // leave Cmd/Ctrl+R to reload
   if (e.key === "Enter" && role === "earth") { e.preventDefault(); wipe(); }

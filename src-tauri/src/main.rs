@@ -40,6 +40,11 @@ fn log(line: String) {
     println!("{line}");
 }
 
+#[tauri::command]
+fn quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// macOS 26+: give the window an (empty) unified toolbar so the traffic lights get
 /// their proper glass capsule instead of a squashed one under the hidden title bar.
 #[cfg(target_os = "macos")]
@@ -70,7 +75,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![api_key, log])
+        .invoke_handler(tauri::generate_handler![api_key, log, quit])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

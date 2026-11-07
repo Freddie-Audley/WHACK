@@ -605,14 +605,14 @@ export class Field {
           const m = { ...k, t: 0 };
           sc.marks.push(m);
           u.beam = true;
-          await tween_(400 + Math.hypot(k.x2 - k.x1, k.y2 - k.y1) * 13, (p) => { m.t = p; u.x = lerp(k.x1, k.x2, p); u.y = lerp(k.y1, k.y2, p); });
+          await tween_(300 + Math.hypot(k.x2 - k.x1, k.y2 - k.y1) * 8.5, (p) => { m.t = p; u.x = lerp(k.x1, k.x2, p); u.y = lerp(k.y1, k.y2, p); });
         } else {
           const at = (deg) => [k.x + k.r * Math.cos(rad(deg)), k.y + k.r * Math.sin(rad(deg))];
           await fly(u, ...at(k.from));
           const m = { ...k, t: 0 };
           sc.marks.push(m);
           u.beam = true;
-          await tween_(450 + (k.r * k.sweep * Math.PI / 180) * 13, (p) => { m.t = p; [u.x, u.y] = at(k.from + k.sweep * p); });
+          await tween_(320 + (k.r * k.sweep * Math.PI / 180) * 8.5, (p) => { m.t = p; [u.x, u.y] = at(k.from + k.sweep * p); });
         }
         u.beam = false;
       }
@@ -627,7 +627,7 @@ export class Field {
         u.beam = true; u.beamR = 6;
         const cow = { ...c, h: 1 };
         sc.cows.push(cow);
-        await tween_(1400, (p) => { cow.h = 1 - p; }, ease);
+        await tween_(950, (p) => { cow.h = 1 - p; }, ease);
         cow.h = 0;
         u.beam = false; u.beamR = 0;
       }
@@ -642,12 +642,12 @@ export class Field {
           await fly(u, c.x, c.y);
           sc.marks.push(m);
           u.beam = true;
-          await tween_(650 + c.r * 24, (p) => { m.t = p; u.beamR = c.r * p; }, ease);
+          await tween_(450 + c.r * 16, (p) => { m.t = p; u.beamR = c.r * p; }, ease);
         } else {
           await fly(u, c.x + c.r, c.y);
           sc.marks.push(m);
           u.beam = true;
-          await tween_(650 + c.r * 42, (p) => { m.t = p; u.x = c.x + c.r * Math.cos(p * Math.PI * 2); u.y = c.y + c.r * Math.sin(p * Math.PI * 2); });
+          await tween_(450 + c.r * 28, (p) => { m.t = p; u.x = c.x + c.r * Math.cos(p * Math.PI * 2); u.y = c.y + c.r * Math.sin(p * Math.PI * 2); });
         }
         u.beam = false; u.beamR = 0;
       }
@@ -668,7 +668,7 @@ export class Field {
 
   // The wheat springs back up, ready for the next word.
   async regrow() {
-    await tween(1300, (p) => { this.scene.fade = 1 - p; });
+    await tween(900, (p) => { this.scene.fade = 1 - p; });
     this.clear();
   }
 
@@ -681,7 +681,7 @@ export class Field {
     await flyTo(u, x, y);
     u.beam = true; u.beamR = 6;
     sc.flag = { x, y, h: 1 };
-    await tween(1500, (p) => { sc.flag.h = 1 - p; }, ease);
+    await tween(1100, (p) => { sc.flag.h = 1 - p; }, ease);
     sc.flag.h = 0;
     u.beam = false; u.beamR = 0;
     await flyTo(u, x - 20, -30);
@@ -692,5 +692,5 @@ export class Field {
 function flyTo(u, x, y) {
   const x0 = u.x, y0 = u.y, dist = Math.hypot(x - x0, y - y0);
   if (dist <= 0.01) return Promise.resolve();
-  return tween(320 + dist * 11, (p) => { u.x = lerp(x0, x, p); u.y = lerp(y0, y, p); }, ease);
+  return tween(250 + dist * 7.5, (p) => { u.x = lerp(x0, x, p); u.y = lerp(y0, y, p); }, ease);
 }

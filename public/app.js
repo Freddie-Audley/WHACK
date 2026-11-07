@@ -11,11 +11,12 @@ import { designFields, reviewFields, readFrames, guessSentence, loadKey } from "
 const q = new URLSearchParams(location.search);
 const SPEED = +q.get("speed") || 1; // for testing: everything on laptop 1 runs this much faster
 setSpeed(SPEED);
-const FRESH_MS = 1800;  // empty field before the saucers arrive
-const HOLD_MS = 6500;   // finished field held still for laptop 2 to read
-const END_MS = 4000;    // the finish flag
+const FRESH_MS = 1000;  // empty field before the saucers arrive
+const HOLD_MS = 4500;   // finished field held still for laptop 2 to read (about 4 webcam frames)
+const END_MS = 3500;    // the finish flag
 const FRAME_MS = 1000;  // laptop 2 takes a webcam frame every second
 const BATCH = 6;        // frames per read call
+const REVISED_MS = 4500; // how long a word changed by a later field stays highlighted
 const END = "🏁";
 
 let role = "a";
@@ -176,8 +177,20 @@ function showGuess() {
   fields.forEach((f, i) => {
     if (i) sentence.append(" ");
     const w = document.createElement("span");
+    w.className = "word";
     w.textContent = f.word || "…";
-    if (!f.word) w.className = "unknown";
+    if (!f.word) w.classList.add("unknown");
+    // A word just changed by a later field: highlight it, with the old guess crossed out above.
+    const age = Date.now() - (f.revisedAt || 0);
+    if (f.was && age < REVISED_MS) {
+      w.classList.add("revised");
+      w.style.animationDelay = `${-age}ms`;
+      const was = document.createElement("span");
+      was.className = "was";
+      was.textContent = f.was;
+      was.style.animationDelay = `${-age}ms`;
+      w.append(was);
+    }
     sentence.append(w);
   });
   if (ended) sentence.append(` ${END}`);
@@ -218,27 +231,48 @@ async function readLoop() {
   finish();
 }
 
+let finalDone = false;
+
 async function guess() {
   if (guessing) return;
   guessing = true;
-  while (fields.length > guessedFor) {
+  // Guess again whenever a new field arrives, and once more when the message is over.
+  while (fields.length > guessedFor || (ended && !finalDone && fields.length)) {
     const n = fields.length;
-    if (!guessedFor) working("reading their fields…");
+    const final = ended;
+    if (final) working("rereading the whole message…");
+    else if (!guessedFor) working("reading their fields…");
     try {
-      const out = await guessSentence({ fields: fields.slice(0, n).map((f) => f.image) });
-      const words = Array.isArray(out.words) ? out.words : [];
-      for (let i = 0; i < n; i++) fields[i].word = String(words[i] ?? "").trim() || "?";
+      const previous = fields.slice(0, n).map((f) => (f.word ? { reading: f.reading, options: f.options, word: f.word } : null));
+      const out = await guessSentence({ fields: fields.slice(0, n).map((f) => f.image), previous, final });
+      const got = Array.isArray(out.fields) ? out.fields : [];
+      for (let i = 0; i < n; i++) {
+        const g = got[i] ?? {};
+        const word = String(g.word ?? "").trim() || "?";
+        const f = fields[i];
+        if (f.word && f.word.toLowerCase() !== word.toLowerCase()) {
+          f.was = f.word;
+          f.revisedAt = Date.now();
+          log(`revised field ${i + 1}: "${f.word}" → "${word}"`);
+        }
+        f.word = word;
+        f.reading = String(g.reading ?? "");
+        f.options = Array.isArray(g.options) ? g.options.map(String).slice(0, 3) : [];
+      }
       thought = out.thought || "";
       status("");
       problem();
-      log(`guess: ${fields.slice(0, n).map((f) => f.word).join(" ")} / "${thought}"`);
+      log(`${final ? "final guess" : "guess"}: ${fields.slice(0, n).map((f) => f.word).join(" ")} / "${thought}"`);
     } catch (e) {
       log(`error: guess: ${e.message}`);
       problem(`guessing failed: ${e.message}`);
+      status("");
       await sleep(2000);
     }
     guessedFor = n;
+    if (final) finalDone = true;
     showGuess();
+    setTimeout(showGuess, REVISED_MS + 100); // settle any highlighted changes
   }
   guessing = false;
 }
@@ -251,7 +285,7 @@ function finish() {
   if (!fields.length) status("no fields seen");
   else if (!guessing) status("");
   showGuess();
-  guess(); // one last guess with every field, if any arrived since the last one
+  guess(); // one last careful read of the whole message
 }
 
 async function read() {

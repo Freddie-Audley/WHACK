@@ -20,6 +20,12 @@
   body.revealed #reveal, body.read #guess { display: flex; }
   .sentence { font-size: 46px; font-weight: 600; text-align: center; color: #111; max-width: 90%; }
   .sentence .unknown { color: #ccc; }
+  /* A word that a later field changed: it flashes green, with the old guess crossed out above it. */
+  .sentence .word { position: relative; display: inline-block; }
+  .sentence .revised { animation: revised 4.5s ease-out both; }
+  .sentence .was { position: absolute; left: 50%; bottom: 88%; transform: translateX(-50%); font-size: 22px; font-weight: 500; color: #c0392b; text-decoration: line-through; white-space: nowrap; animation: was 4.5s ease-in both; }
+  @keyframes revised { 0%, 55% { color: #0a9a5c; } 100% { color: #111; } }
+  @keyframes was { 0%, 60% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
   .thought { margin-top: -26px; color: #888; font-style: italic; font-size: 16px; min-height: 22px; }
   .tiles { --tw: 200px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; max-width: 95%; }
   .tile { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 20px; color: #333; animation: pop .5s both; animation-delay: calc(var(--i, 0) * 140ms); }

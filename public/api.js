@@ -156,7 +156,7 @@ ${GUIDE}
 
 For each field also give "idea": a few words on what you mean it to show.`,
     FIELDS_SCHEMA,
-    { effort: "high", maxTokens: 12000 },
+    { effort: "medium", maxTokens: 12000 }, // the self-check pass below catches messy drawings
   );
 }
 
@@ -199,27 +199,60 @@ Ignore everything around the screen.`));
 }
 
 // Laptop 2: guess the message from the finished fields read so far (webcam photos).
-export async function guessSentence({ fields }) {
+// Every guess re-reads the whole message, so later fields can change earlier words.
+// `previous` is the last reading of each field ({ reading, options, word }, or null for
+// fields that are new). `final` means the message is complete: one last, careful read.
+// The other words a field could mean, besides the one picked (ignoring case).
+const others = (p) => (p.options ?? []).filter((o) => String(o).toLowerCase() !== String(p.word).toLowerCase());
+
+export async function guessSentence({ fields, previous = [], final = false }) {
   const content = [];
   fields.forEach((f, i) => content.push(text(`Field ${i + 1}:`), imageBlock(f)));
+  const before = previous
+    .map((p, i) => (p ? `${i + 1}. ${p.reading || "?"}: ${p.word}${others(p).length ? ` (or ${others(p).join(", ")})` : ""}` : null))
+    .filter(Boolean);
   content.push(text(`${RULES}
 
 These ${fields.length} photos were taken with your webcam pointed at a screen, so they may be skewed or blurry. Look only at the field.
-The message may not be finished yet.
-Guess one word per field, in order, so that together they make the most sensible message. Give exactly ${fields.length} words.
-Also give "thought": what you mutter to yourself, under 15 words, casual, first person.`));
+${before.length ? `
+Your reading before the latest fields arrived:
+${before.join("\n")}
+` : ""}
+${final
+    ? "The message is finished: there are no more fields. This is your last chance, so take your time."
+    : "The message may not be finished yet."}
+Read the whole message again from the start. Later fields often explain earlier ones: a picture that made no sense alone can click once you see what comes after it. Change any earlier word if a different reading makes the whole message make more sense, and don't hold on to a guess just because you made it.
+
+For each field, in order, give:
+- "reading": a few words on what the field shows (shapes, not meanings)
+- "options": two or three words it could mean, most likely first
+- "word": your pick, so that together the picks make the most sensible message
+Give exactly ${fields.length} fields.
+Also give "thought": what you mutter to yourself as you read it, under 15 words, casual, first person.${before.length ? " If you changed an earlier word, mutter about that." : ""}`));
   return call(
     `You are an alien. A stranger from another world is trying to tell you something, and the only way they can is by cutting crop circles into a field from their flying saucers.`,
     content,
     {
       type: "object",
       properties: {
-        words: { type: "array", items: { type: "string" } },
+        fields: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              reading: { type: "string" },
+              options: { type: "array", items: { type: "string" } },
+              word: { type: "string" },
+            },
+            required: ["reading", "options", "word"],
+            additionalProperties: false,
+          },
+        },
         thought: { type: "string" },
       },
-      required: ["words", "thought"],
+      required: ["fields", "thought"],
       additionalProperties: false,
     },
-    { effort: "medium", maxTokens: 4000 },
+    { effort: final ? "high" : "medium", maxTokens: final ? 8000 : 4000 },
   );
 }

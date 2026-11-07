@@ -134,8 +134,8 @@ const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
 let closing = false;
 let over = false;         // the encounter has ended: R goes back to the menu
-// Opened from a phone's home screen: the app is only the board over Earth, so skip the menu.
-const phoneApp = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+// On a phone (in the browser or from the home screen) the app is only the board over Earth, so skip the menu.
+const phoneApp = touchOnly || navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
 // Guesser: rebuild the imagined world from the facts understood so far, including the one
 // still being read, which may change its mind; the rest stays white.

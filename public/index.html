@@ -100,7 +100,7 @@
     #pixel-board-frame { border-radius: 14px; }
     /* Just the board and Clear: a touch on a black pixel rubs out, anywhere else draws. */
     #editor { --board: min(calc(100vw - 32px), calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px), 680px); }
-    #editor .pen, #brush-tool, #fill-tool { display: none; }
+    #editor .pen, #editor #brush-tool, #editor #fill-tool { display: none; } /* #editor: outranks #editor .square-button */
     .editor-tools { display: block; }
     #editor #wipe { width: auto; height: 48px; padding: 0 32px; margin-top: 16px; }
   }

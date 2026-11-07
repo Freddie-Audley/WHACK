@@ -1,5 +1,5 @@
 import { CATEGORIES, generateWorld } from "./worlds.js";
-import { renderBoard, cleanGrid, emptyGrid, ink, W, H } from "./board.js";
+import { renderBoard, renderEditorBoard, cleanGrid, emptyGrid, ink, W, H, SIZE } from "./board.js";
 import { WebcamPeer } from "./peer.js";
 import { Scene, WorldView } from "./scene.js";
 import { draw, interpret, report, openers, loadKey } from "./api.js";
@@ -35,7 +35,85 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const board = document.createElement("canvas");
 board.width = W; board.height = H;
 renderBoard(board, emptyGrid());
+const editorCanvas = $("pixel-board");
+const editorGrid = emptyGrid();
+renderEditorBoard(editorCanvas, editorGrid);
 let scene, imagined, peer, t0;
+let editorPen = "#";
+let editorTool = "pen";
+let drawing = false;
+
+function pixelAt(event) {
+  const rect = editorCanvas.getBoundingClientRect();
+  const x = Math.max(0, Math.min(SIZE - 1, Math.floor((event.clientX - rect.left) / rect.width * SIZE)));
+  const y = Math.max(0, Math.min(SIZE - 1, Math.floor((event.clientY - rect.top) / rect.height * SIZE)));
+  return { x, y };
+}
+
+function paintPixel(event) {
+  const { x, y } = pixelAt(event);
+  if (editorGrid[y][x] === editorPen) return;
+  const row = [...editorGrid[y]];
+  row[x] = editorPen;
+  editorGrid[y] = row.join("");
+  renderEditorBoard(editorCanvas, editorGrid);
+}
+
+function fillArea(x, y) {
+  const target = editorGrid[y][x];
+  if (target === editorPen) return;
+
+  const pixels = Array.from({ length: SIZE * SIZE }, () => false);
+  const stack = [y * SIZE + x];
+  pixels[stack[0]] = true;
+  while (stack.length) {
+    const index = stack.pop();
+    const px = index % SIZE, py = Math.floor(index / SIZE);
+    if (editorGrid[py][px] !== target) continue;
+
+    const row = [...editorGrid[py]];
+    row[px] = editorPen;
+    editorGrid[py] = row.join("");
+    for (const [nx, ny] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
+      const neighbor = ny * SIZE + nx;
+      if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && !pixels[neighbor] && editorGrid[ny][nx] === target) {
+        pixels[neighbor] = true;
+        stack.push(neighbor);
+      }
+    }
+  }
+  renderEditorBoard(editorCanvas, editorGrid);
+}
+
+editorCanvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  if (editorTool === "fill") {
+    const { x, y } = pixelAt(event);
+    fillArea(x, y);
+    return;
+  }
+  drawing = true;
+  editorCanvas.setPointerCapture(event.pointerId);
+  paintPixel(event);
+});
+editorCanvas.addEventListener("pointermove", (event) => {
+  if (drawing) paintPixel(event);
+});
+editorCanvas.addEventListener("pointerup", () => { drawing = false; });
+editorCanvas.addEventListener("pointercancel", () => { drawing = false; });
+
+function selectPen(color) {
+  editorPen = color;
+  $("pen-black").setAttribute("aria-pressed", String(color === "#"));
+  $("pen-white").setAttribute("aria-pressed", String(color === "."));
+}
+
+function selectEditorTool(tool) {
+  editorTool = tool;
+  $("brush-tool").setAttribute("aria-pressed", String(tool === "pen"));
+  $("fill-tool").setAttribute("aria-pressed", String(tool === "fill"));
+}
 
 let sent = 0;            // describer: facts shown so far
 const guesses = {};      // guesser: category id -> reading, committed once the board came down
@@ -177,6 +255,12 @@ async function growWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
+async function openEditor() {
+  await growWindow();
+  $("start").classList.add("hide");
+  document.body.classList.add("editor");
+}
+
 async function start(r) {
   role = r;
   t0 = performance.now();
@@ -207,4 +291,13 @@ addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message ||
   if (!key) $("nokey").style.display = "block";
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
+  $("startC").onclick = openEditor;
+  $("pen-black").onclick = () => selectPen("#");
+  $("pen-white").onclick = () => selectPen(".");
+  $("brush-tool").onclick = () => selectEditorTool("pen");
+  $("fill-tool").onclick = () => selectEditorTool("fill");
+  $("clear-board").onclick = () => {
+    editorGrid.splice(0, editorGrid.length, ...emptyGrid());
+    renderEditorBoard(editorCanvas, editorGrid);
+  };
 })();

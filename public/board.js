@@ -32,3 +32,19 @@ export function renderBoard(canvas, grid, upTo = SIZE * SIZE) {
     ctx.fillRect(x * PX + 1, y * PX + 1, PX - 2, PX - 2);
   }
 }
+
+export function renderEditorBoard(canvas, grid) {
+  const ctx = canvas.getContext("2d");
+  renderBoard(canvas, grid);
+  ctx.strokeStyle = "#f0e2e8";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < SIZE; i++) {
+    const p = i * PX;
+    ctx.beginPath();
+    ctx.moveTo(p, 0);
+    ctx.lineTo(p, H);
+    ctx.moveTo(0, p);
+    ctx.lineTo(W, p);
+    ctx.stroke();
+  }
+}

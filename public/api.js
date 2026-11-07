@@ -71,12 +71,15 @@ Also give "thought", said just before drawing: what you are about to draw and ho
 
 // Guesser: photo of the describer's board -> what it says about their world, as one or more readings.
 // Called repeatedly while the board is up, as the drawing grows; `previous` is the last reading of this same board.
-// `believed` holds what earlier boards were taken to mean; a new board may revise any of it.
+// `believed` holds what earlier boards were taken to mean. Those facts are settled: a new board can only fill in
+// the categories still open, so a half-drawn (or blank) board never wipes out what earlier boards established.
 export async function interpret({ image, categories, believed, previous }) {
   const [, mediaType, data] = image.match(/^data:(image\/\w+);base64,(.+)$/);
   const label = (id) => categories.find((c) => c.id === id).label;
   const list = (readings) => readings.map((r) => `${label(r.category)}: ${r.value}`).join(", ");
   const known = list(Object.values(believed));
+  const open = categories.filter((c) => !(c.id in believed));
+  const cats = open.length ? open : categories; // everything known already: people kept drawing, so anything goes
   const out = await call(
     `${VOICE}
 The photo shows a stranger's whiteboard through a webcam, in black and white. ${BOARD} It may be unfinished, and one picture can show several facts about their world.`,
@@ -85,8 +88,8 @@ The photo shows a stranger's whiteboard through a webcam, in black and white. ${
       {
         type: "text",
         text: `Possible facts (category: values):
-${listCategories(categories)}
-${known ? `You already think: ${known}. Overwrite any of it if this picture says otherwise.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.thought}". Update it if more has been drawn.\n` : ""}
+${listCategories(cats)}
+${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.thought}". Update it if more has been drawn.\n` : ""}
 Give "readings": every fact this picture shows, each a category with one of its values. Give "thought": what you take the drawing to be and what that means about their world, taken literally (e.g. "Falling dots, so their sky sheds gravel." or "Their sun has legs, which explains the nights.").`,
       },
     ],
@@ -98,7 +101,7 @@ Give "readings": every fact this picture shows, each a category with one of its 
           type: "array",
           items: {
             type: "object",
-            properties: { category: { type: "string", enum: categories.map((c) => c.id) }, value: { type: "string" } },
+            properties: { category: { type: "string", enum: cats.map((c) => c.id) }, value: { type: "string" } },
             required: ["category", "value"],
             additionalProperties: false,
           },
@@ -113,7 +116,7 @@ Give "readings": every fact this picture shows, each a category with one of its 
   // One reading per category, each value snapped to one the category actually has.
   const byCategory = {};
   for (const r of out.readings) {
-    const cat = categories.find((c) => c.id === r.category);
+    const cat = cats.find((c) => c.id === r.category);
     if (!cat) continue;
     const v = r.value.toLowerCase();
     byCategory[cat.id] = { category: cat.id, value: cat.values.includes(r.value) ? r.value : cat.values.find((x) => v.includes(x) || x.includes(v)) || cat.values[0] };
@@ -131,16 +134,4 @@ export async function openers({ n }) {
     "low",
   );
   return out.lines;
-}
-
-// End of the game: the ambassador's report home, from what it concluded about each board.
-export async function report({ notes }) {
-  return call(
-    `${VOICE}
-You are reporting home after meeting a stranger who could only talk in pixel pictures.`,
-    `Your notes: ${notes.join(" ") || "None. You understood nothing."}
-One sentence home, under 16 words: the key finding and what to do about it next visit.`,
-    { type: "object", properties: { report: { type: "string" } }, required: ["report"], additionalProperties: false },
-    "low",
-  );
 }

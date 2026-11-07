@@ -2,20 +2,18 @@ import { CATEGORIES, EARTH, generateWorld } from "./worlds.js";
 import { renderBoard, renderEditorBoard, cleanGrid, emptyGrid, ink, W, H, SIZE } from "./board.js";
 import { WebcamPeer } from "./peer.js";
 import { Scene, WorldView, EARTH_COLOURS } from "./scene.js";
-import { draw, interpret, report, openers, loadKey } from "./api.js";
+import { draw, interpret, openers, loadKey } from "./api.js";
 
 // One laptop describes its world (role "a"), the other only guesses (role "b").
 // The guesser's webcam points at the describer's screen.
 const q = new URLSearchParams(location.search);
 const N = Math.min(CATEGORIES.length, +q.get("n") || CATEGORIES.length);
-const TOTAL_MS = (+q.get("t") || 90) * 1000; // the whole encounter, from pressing the button
-const REPORT_MS = TOTAL_MS - 18000;          // the guesser stops guessing after this and writes home
 const INK_MS = 2000;                         // the drawing appears over this long, board already up
 const HOLD_MS = 3000;                        // how long the finished board stays up
 // Describer: time to read what it says it's about to draw, longer for longer lines.
 const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
-const PICTURES = 4;                          // the describer gets this many boards for the whole world
+const PICTURES = 4;                          // the describer gets this many boards for the whole world; people can add more after
 const IDLE = ["Hello?", "They're thinking.", "Take your time.", "Is this thing on?"];
 let role = "a";
 const world = generateWorld();
@@ -128,11 +126,9 @@ function selectEditorTool(tool) {
 let sent = 0;            // describer: boards shown so far
 const guesses = {};      // guesser: category id -> reading, committed once the board came down
 let pending = null;      // guesser: reading of the board that is up right now; may still change
-const notes = [];        // guesser: what it concluded from each board, for the report home
 let firstWords = [];     // guesser: lines for the moment a board comes up, fetched at the start
 const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
-let closing = false;
 let over = false;         // the encounter has ended: R goes back to the menu
 // On a phone (in the browser or from the home screen) the app is only the board over Earth, so skip the menu.
 const phoneApp = touchOnly || navigator.standalone || matchMedia("(display-mode: standalone)").matches;
@@ -154,9 +150,9 @@ function prefetch() {
   });
 }
 
-// Wait for `pred`, sampling every 200 ms; give up after `ms` or when the clock runs out.
+// Wait for `pred`, sampling every 200 ms; give up after `ms`.
 async function waitFor(pred, ms) {
-  for (let t = 0; t < ms && !closing; t += 200) { if (pred()) return true; await sleep(200); }
+  for (let t = 0; t < ms; t += 200) { if (pred()) return true; await sleep(200); }
   return false;
 }
 
@@ -207,7 +203,7 @@ async function readBoard() {
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
   await sleep(500); // let their board settle in frame
   let reading = null;
-  while (!closing && !down()) {
+  while (!down()) {
     try {
       const image = peer.capture();
       $("processed").src = image; // shown beside the webcam: exactly what the model is given
@@ -225,30 +221,21 @@ async function readBoard() {
   pending = null;
   if (reading) {
     for (const r of reading.readings) guesses[r.category] = r;
-    notes.push(reading.thought);
     log(`lock: ${reading.readings.map((r) => `${r.category} = ${r.value}`).join(", ") || "nothing"}`);
   }
   showGuesses();
 }
 
-// Guesser: every time their board comes up, read it until it goes down, for as many boards as come up
-// (people at the controls can keep going) until the clock runs out.
+// Guesser: every time their board comes up, read it until it goes down, for as many boards as come up.
+// There is no clock: the describer stops after its boards, and people at the controls can keep going.
 async function guess() {
   say(pick(IDLE));
   let seen = 0;
-  while (!closing) {
-    if (await waitFor(() => peer.rises > seen, TOTAL_MS)) { seen = peer.rises; await readBoard(); }
+  while (true) {
+    await waitFor(() => peer.rises > seen, Infinity);
+    seen = peer.rises;
+    await readBoard();
   }
-  await finish();
-}
-
-async function finish() {
-  closing = true;
-  await sleep(2000);
-  say("…");
-  try { const out = await report({ notes }); say(out.report); log(`report: ${out.report}`); }
-  catch (e) { log(`error: ${e.message}`); }
-  over = true;
 }
 
 // The app opens as a small start window; grow it to game size once a role is picked.
@@ -319,7 +306,7 @@ async function start(r) {
   peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.008);
   openers({ n: pictures.length + 1 }).then((l) => { firstWords = l; }).catch((e) => log(`error: ${e.message}`));
   await peer.start();
-  setTimeout(() => { closing = true; }, REPORT_MS);
+  over = true; // nothing ends on its own: R goes back whenever
   guess();
 }
 

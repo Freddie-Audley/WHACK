@@ -1,10 +1,10 @@
 // Facts about a world. Chosen so that honest drawings of different facts look alike
-// (dots in the sky: birds, rocks, or snow? wavy lines: water, or a gale? an empty board: no sun, no wind, no animals?),
+// (dots in the sky: birds, rocks, or snow? wavy lines: water, a gale, or snakes? an empty board: no sun, no wind, no animals?),
 // and so that Earth (one sun, a breeze, cows, mountains, rain) is one of the worlds.
 export const CATEGORIES = [
   { id: "suns", label: "In the sky", values: ["no sun", "one sun", "two suns", "three suns"] },
   { id: "wind", label: "Wind", values: ["still", "a breeze", "a gale"] },
-  { id: "animals", label: "Animals", values: ["none", "cows", "birds", "fish", "snails", "octopuses"] },
+  { id: "animals", label: "Animals", values: ["none", "cows", "birds", "fish", "snails", "octopuses", "snakes"] },
   { id: "terrain", label: "Terrain", values: ["flat", "mountains", "water", "holes"] },
   { id: "weather", label: "From above", values: ["nothing", "rain", "snow", "rocks"] },
 ];

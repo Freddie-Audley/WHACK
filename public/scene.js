@@ -162,10 +162,12 @@ export class WorldView {
       m.position.set(x, hgt / 2 - 0.5, z);
       m.rotation.y = rand(0, 6);
     }
+    const holes = []; // where the holes are, so snakes can live in them
     if (v.terrain === "holes") {
       const rim = flat(new THREE.Color(P.ground).multiplyScalar(0.8)), pit = flat(0x2a2540);
       for (let i = 0; i < 30; i++) {
         const r = rand(0.5, 1.4), x = rand(-13, 13), z = rand(-13, -1);
+        holes.push({ x, z });
         const h = add(new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.8, 0.5, 9), pit));
         h.position.set(x, -0.24, z);
         const ring = add(new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.1, 5, 12), rim));
@@ -225,7 +227,8 @@ export class WorldView {
     }
 
     // Animals, and how each copes with the terrain and the wind. On water: cows swim up to their bellies, snails
-    // float shell-up, fish leap, octopuses peek out. On land: fish flop about gasping, and octopuses wear fishbowls.
+    // float shell-up, fish leap, octopuses peek out, snakes swim with their heads up. On land: fish flop about gasping,
+    // and octopuses wear fishbowls. In holes, snakes pop up, sway, and duck back down.
     // In a gale the birds flap flat out and still get blown backwards.
     reseed(5);
     const dark = flat(0x3a3560), white = flat(0xffffff);
@@ -420,6 +423,60 @@ export class WorldView {
           arms.forEach((arm, k) => { arm.rotation.z = 0.6 + Math.sin(t * 6 + k * 1.7 + p) * 0.4; });
           bubbles.forEach((b, k) => { const u = (t * 0.5 + k / 3 + p) % 1; b.position.set(Math.sin(u * 9 + k) * 0.2, 1.0 + u * 0.9, 0.7); });
         });
+      }
+    }
+    if (v.animals === "snakes") {
+      const skin = flat(0x5f9e45), band = flat(0xe0c050), red = flat(0xd8434f);
+      const N = 16, gap = 0.3, R = 0.24, segGeo = new THREE.SphereGeometry(R, 7, 5);
+      for (let i = 0; i < 6; i++) {
+        const snake = new THREE.Group(), segs = [];
+        for (let k = 0; k < N; k++) { // tapering to the tail
+          const seg = new THREE.Mesh(segGeo, k % 3 === 2 ? band : skin);
+          seg.scale.setScalar(1 - (k / N) * 0.7);
+          snake.add(seg);
+          segs.push(seg);
+        }
+        const head = new THREE.Group(), skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), skin);
+        skull.scale.set(1.4, 0.75, 1);
+        head.add(skull);
+        for (const sz of [-1, 1]) { const eye = googly(0.09, 0.12, 0.15, sz * 0.2); eye.rotation.y = sz > 0 ? 0.8 : Math.PI - 0.8; head.add(eye); }
+        const tongue = new THREE.Group(), stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.04), red);
+        stem.position.x = 0.15;
+        tongue.add(stem);
+        for (const a of [-0.5, 0.5]) { // the fork
+          const prong = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.03), red);
+          prong.position.set(0.34, 0, a * 0.08);
+          prong.rotation.y = -a;
+          tongue.add(prong);
+        }
+        tongue.position.set(0.38, -0.05, 0);
+        head.add(tongue);
+        snake.add(head);
+        add(snake);
+        const p = rand(0, 20), flick = (t) => { tongue.scale.x = Math.sin(t * 1.3 + p) > 0.5 ? Math.abs(Math.sin(t * 25)) : 0.01; };
+        const hole = holes.length ? holes.splice((rng() * holes.length) | 0, 1)[0] : null;
+        if (hole) this.movers.push((t) => {
+          // Pops up out of its hole, sways at whoever is watching, then ducks back down.
+          const T = 4 + (p % 2), u = ((t + p) / T) % 1;
+          const H = -0.4 + 2.1 * (u < 0.08 ? u / 0.08 : u < 0.7 ? 1 : u < 0.76 ? 1 - (u - 0.7) / 0.06 : 0); // head height; down below the rim
+          const sway = (y) => Math.max(0, y) * 0.2 * Math.sin(t * 2.2 + p - y);
+          segs.forEach((s, k) => { const y = H - (k + 1) * gap; s.position.set(hole.x + sway(y), y, hole.z); });
+          head.position.set(hole.x + sway(H), H, hole.z);
+          head.rotation.set(0, -Math.PI / 2, -sway(H) * 0.6); // facing the camera
+          flick(t);
+        });
+        else {
+          // Slithers along, its body following the same S-shaped path its head took; in water, head up, swimming.
+          const z = rand(-12, -3), d = rng() < 0.5 ? 1 : -1, A = 0.35, c = 1.6;
+          this.movers.push((t) => {
+            const s = t * 0.9 + p, x = d * ((s % 32) - 16);
+            const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : this.groundY(wx, z) + R * segs[k].scale.x;
+            segs.forEach((seg, k) => { const wx = x - d * (k + 1) * gap; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - (k + 1) * gap))); });
+            head.position.set(x, water ? 0.5 : this.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));
+            head.rotation.set(0, (d > 0 ? 0 : Math.PI) - Math.atan(A * c * Math.cos(c * s)), 0);
+            flick(t);
+          });
+        }
       }
     }
 

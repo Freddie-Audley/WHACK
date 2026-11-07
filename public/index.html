@@ -9,13 +9,13 @@
   html, body { height: 100%; }
   body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; color: #1d1d3a; background: linear-gradient(135deg, var(--bg1, rgba(255,214,232,.25)), var(--bg2, rgba(201,228,255,.25))); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
   .surface { display: none; position: fixed; top: 40px; bottom: 14px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
-  body.play #stage, body.play #imagined, body.play #cam { display: block; }
+  body.describe #stage, body.guess #stage, body.guess #imagined, body.guess #cam { display: block; }
   #stage { left: 14px; right: 14px; }
   #stage canvas, #imagined canvas { display: block; }
   .bubble { position: absolute; max-width: min(60%, 520px); padding: 12px 16px; border-radius: 18px; background: rgba(255,255,255,.92); color: #1d1d3a; font-size: 26px; line-height: 1.25; white-space: pre-wrap; pointer-events: none; transition: opacity .3s; }
   body.raised .bubble { opacity: 0; }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
-  body.play #stage { right: calc(50% + 7px); }
+  body.guess #stage { right: calc(50% + 7px); }
   #imagined { left: calc(50% + 7px); right: 14px; }
 
   .title { font-size: 40px; font-weight: 500; }
@@ -55,8 +55,8 @@
     <h1 class="title">First Contact</h1>
     <p>by whack_a_snake</p>
     <div class="row">
-      <button id="startA">Go first</button>
-      <button id="startB">Go second</button>
+      <button id="startA">Describe my world</button>
+      <button id="startB">Guess their world</button>
     </div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>

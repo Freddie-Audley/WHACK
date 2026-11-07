@@ -4,22 +4,22 @@ import { WebcamPeer } from "./peer.js";
 import { Scene, WorldView } from "./scene.js";
 import { draw, interpret, report, loadKey } from "./api.js";
 
-// Two laptops, each an ambassador with its own world, each webcam pointed at the other's screen.
-// They take turns: hold up a picture of one fact, then watch for the other's reply. One side goes first.
+// One laptop describes its world (role "a"), the other only guesses (role "b").
+// The guesser's webcam points at the describer's screen.
 const q = new URLSearchParams(location.search);
 const N = Math.min(CATEGORIES.length, +q.get("n") || CATEGORIES.length);
 const TOTAL_MS = (+q.get("t") || 90) * 1000; // the whole encounter, from pressing the button
-const REPORT_MS = TOTAL_MS - 18000;          // no new turns after this; write home instead
-const LISTEN_MS = 14000;                     // how long to hold a board up waiting for a reply
+const REPORT_MS = TOTAL_MS - 18000;          // the guesser stops guessing after this and writes home
+const HOLD_MS = 8000;                        // how long the describer holds each board up
 const IDLE = ["hello? anyone?", "they're thinking.", "take your time.", "is this thing on?"];
-let first = true;
+let role = "a";
 const world = generateWorld();
 world.order = world.order.slice(0, N);
 
 const $ = (id) => document.getElementById(id);
 const elapsed = () => t0 ? ((performance.now() - t0) / 1000).toFixed(1) : "0.0";
 const log = (m) => {
-  const line = `[${first ? "1st" : "2nd"} ${elapsed()}s] ${m.replace(/\n/g, " ")}`;
+  const line = `[${role} ${elapsed()}s] ${m.replace(/\n/g, " ")}`;
   console.log(line);
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
@@ -33,13 +33,14 @@ board.width = W; board.height = H;
 renderBoard(board, emptyGrid());
 let scene, imagined, peer, t0;
 
-let sent = 0;            // my facts shown so far
-const guesses = {};      // their facts: category id -> { value, seen, reasoning }
+let sent = 0;            // describer: facts shown so far
+const guesses = {};      // guesser: category id -> { value, seen, reasoning }
 const remaining = () => CATEGORIES.filter((c) => !(c.id in guesses));
-const drawings = {};     // my pictures: category id -> promise, requested up front
+const drawings = {};     // describer: category id -> promise of the picture, requested up front
+const describer = () => role === "a";
 let closing = false;
 
-// Rebuild the imagined world from the facts understood so far; the rest stays white.
+// Guesser: rebuild the imagined world from the facts understood so far; the rest stays white.
 function showGuesses() {
   const known = {};
   for (const id in guesses) known[id] = guesses[id].value;
@@ -61,7 +62,7 @@ async function waitFor(pred, ms) {
   return false;
 }
 
-// True once when the other board comes up: two consistent samples, after it was down.
+// True once when the describer's board comes up: two consistent samples, after it was down.
 let peerWas = false, lastSample = false, stable = 0;
 function rose() {
   const r = peer.raised();
@@ -72,7 +73,7 @@ function rose() {
   return r;
 }
 
-// My turn: draw the next fact and hold it up. It stays up until lower().
+// Describer: draw the next fact and hold it up. It stays up until lower().
 async function show() {
   const id = world.order[sent++];
   const category = CATEGORIES.find((c) => c.id === id);
@@ -95,7 +96,19 @@ function lower() {
   document.body.classList.remove("raised");
 }
 
-// Their turn: their board is up. Read it, lock in a fact, add it to the imagined world.
+// Describer: one fact after another, each held up for a while.
+async function describe() {
+  await sleep(1500);
+  while (sent < N) {
+    if (!(await show())) continue;
+    await sleep(HOLD_MS);
+    lower();
+    await sleep(1500);
+  }
+  say("");
+}
+
+// Guesser: their board is up. Read it, lock in a fact, add it to the imagined world.
 async function readPeer() {
   say("…");
   await sleep(800); // let their board settle in frame
@@ -105,35 +118,27 @@ async function readPeer() {
   log(`see: ${out.seen} → ${c.label} = ${out.value} (${out.reasoning}) / "${out.thought}"`);
   showGuesses();
   say(out.thought);
-  await sleep(1500);
 }
 
-// Show, listen, show, listen... until both worlds are told or the clock runs out.
-async function play() {
-  await sleep(first ? 1500 : 500);
-  let myTurn = first;
-  while (!closing && (sent < N || remaining().length)) {
-    if (myTurn && sent < N) { if (!(await show())) continue; }
-    else say(pick(IDLE));
-    // Hold (or just wait) until their board comes up. If they have nothing left to tell me, hold briefly and move on.
-    const theirs = await waitFor(rose, remaining().length ? LISTEN_MS : 6000);
-    lower();
-    if (theirs) { try { await readPeer(); } catch (e) { log(`error: ${e.message}`); say("…"); } }
-    myTurn = true;
+// Guesser: every time their board comes up, read it; stop when every fact is in or the clock runs out.
+async function guess() {
+  say(pick(IDLE));
+  while (!closing && remaining().length) {
+    if (await waitFor(rose, TOTAL_MS)) { try { await readPeer(); } catch (e) { log(`error: ${e.message}`); say("…"); } }
   }
   await finish();
 }
 
 async function finish() {
   closing = true;
-  lower();
+  await sleep(2000);
   say("…");
   const theirs = CATEGORIES.filter((c) => guesses[c.id]).map((c) => ({ label: c.label, value: guesses[c.id].value }));
   try { const out = await report({ theirs }); say(out.report); log(`report: ${out.report}`); }
   catch (e) { log(`error: ${e.message}`); }
 }
 
-// The app opens as a small start window; grow it to game size once a side is picked.
+// The app opens as a small start window; grow it to game size once a role is picked.
 async function growWindow() {
   const t = window.__TAURI__;
   if (!t) return;
@@ -144,22 +149,22 @@ async function growWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
-async function start(f) {
-  first = f;
+async function start(r) {
+  role = r;
   t0 = performance.now();
   await growWindow();
   $("start").classList.add("hide");
-  document.body.classList.add("play");
+  document.body.classList.add(describer() ? "describe" : "guess");
   document.body.style.setProperty("--bg1", `hsla(${world.hue * 360}, 80%, 80%, .25)`);
   document.body.style.setProperty("--bg2", `hsla(${(world.hue * 360 + 60) % 360}, 80%, 80%, .25)`);
-  scene = new Scene($("stage"), board, world.hue);
+  scene = new Scene($("stage"), describer() ? board : null, world.hue);
   scene.showWorld(world.values);
+  if (describer()) { prefetch(); describe(); return; }
   imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
-  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.02);
-  prefetch();
+  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.01);
   await peer.start();
   setTimeout(() => { closing = true; }, REPORT_MS);
-  play();
+  guess();
 }
 
 const origErr = console.error.bind(console);
@@ -171,6 +176,6 @@ addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message ||
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (!key) $("nokey").style.display = "block";
-  $("startA").onclick = () => start(true);
-  $("startB").onclick = () => start(false);
+  $("startA").onclick = () => start("a");
+  $("startB").onclick = () => start("b");
 })();

@@ -237,10 +237,10 @@ async function wipe() {
   wiping = true;
   log(`wipe: ${editorGrid.join("/")}`);
   document.body.classList.add("down"); // runs the whole dip: down, a pause out of sight, back up
-  await sleep(500);
+  await sleep(250);
   editorGrid.splice(0, editorGrid.length, ...emptyGrid());
   renderEditorBoard(editorCanvas, editorGrid);
-  await sleep(500);
+  await sleep(250);
   document.body.classList.remove("down");
   wiping = false;
 }

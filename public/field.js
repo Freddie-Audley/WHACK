@@ -34,28 +34,129 @@ function tween(ms, fn, easing = (p) => p) {
 const list = (a) => (Array.isArray(a) ? a : []);
 const deg = (v) => ((Number.isFinite(+v) ? +v : 0) % 360 + 360) % 360;
 
-// Whatever the model sent, cut down to the rules. Lines are kept before arcs if there
-// are more than 3 strokes in total.
-export function normaliseDesign(d) {
-  const lines = list(d?.lines).slice(0, RULES.strokes).map((l) => ({
-    x1: clamp(l?.x1, 0, FW), y1: clamp(l?.y1, 0, FH), x2: clamp(l?.x2, 0, FW), y2: clamp(l?.y2, 0, FH),
-  }));
-  const arcs = list(d?.arcs).slice(0, RULES.strokes - lines.length).map((a) => {
-    const from = deg(a?.from);
-    const sweep = Math.max(15, (deg(a?.to) - from + 360) % 360 || 360);
-    return { x: clamp(a?.x, 0, FW), y: clamp(a?.y, 0, FH), r: clamp(a?.r, 6, 45), from, sweep };
-  });
-  return {
+// A usable number, or NaN for anything missing or junk (null, "", "abc").
+const num = (v) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? +v : NaN);
+const ok = (...vs) => vs.every(Number.isFinite);
+const MARGIN = 4;  // keep the picture this far inside the field edge
+const SNAP = 3.5;  // ends closer than this are meant to touch
+
+// Points along an arc, for working out how far it really reaches.
+const arcPoints = (a) => Array.from({ length: 13 }, (_, i) => {
+  const t = rad(a.from + (a.sweep * i) / 12);
+  return [a.x + a.r * Math.cos(t), a.y + a.r * Math.sin(t)];
+});
+
+function extent(d) {
+  const xs = [], ys = [];
+  for (const l of d.lines) { xs.push(l.x1, l.x2); ys.push(l.y1, l.y2); }
+  for (const c of d.circles) { xs.push(c.x - c.r, c.x + c.r); ys.push(c.y - c.r, c.y + c.r); }
+  for (const a of d.arcs) for (const [x, y] of arcPoints(a)) { xs.push(x); ys.push(y); }
+  for (const c of d.cows) { xs.push(c.x - 11, c.x + 11); ys.push(c.y - 9, c.y + 7); }
+  if (!xs.length) return null;
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+}
+
+// A picture that spills off the field is shrunk (if it's too big) and slid back inside,
+// all of it together, rather than having its edges squashed. Pictures that fit are left alone.
+function fitInside(d) {
+  const b = extent(d);
+  if (!b) return;
+  const w = b.x1 - b.x0, h = b.y1 - b.y0;
+  const k = Math.min(1, (FW - 2 * MARGIN) / Math.max(w, 1e-6), (FH - 2 * MARGIN) / Math.max(h, 1e-6));
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const slide = (lo, size, max) => (lo < MARGIN ? MARGIN - lo : lo + size > max - MARGIN ? max - MARGIN - (lo + size) : 0);
+  const dx = slide(cx - (w * k) / 2, w * k, FW), dy = slide(cy - (h * k) / 2, h * k, FH);
+  if (k === 1 && !dx && !dy) return;
+  const X = (x) => cx + (x - cx) * k + dx, Y = (y) => cy + (y - cy) * k + dy;
+  for (const l of d.lines) Object.assign(l, { x1: X(l.x1), y1: Y(l.y1), x2: X(l.x2), y2: Y(l.y2) });
+  for (const c of [...d.circles, ...d.arcs]) Object.assign(c, { x: X(c.x), y: Y(c.y), r: c.r * k });
+  for (const c of d.cows) Object.assign(c, { x: X(c.x), y: Y(c.y) });
+}
+
+// Ends that nearly touch are meant to touch: line ends near a ring or arc go onto it,
+// line ends near an arc's end go onto that end, and line ends near each other meet at
+// their average, so corners close exactly.
+function snapEnds(d) {
+  const ends = d.lines.flatMap((l) => [[l, "x1", "y1"], [l, "x2", "y2"]]);
+  const get = ([l, kx, ky]) => [l[kx], l[ky]];
+  const set = ([l, kx, ky], [x, y]) => { l[kx] = x; l[ky] = y; };
+  const rings = [...d.circles.filter((c) => !c.filled), ...d.arcs];
+  for (const e of ends) {
+    const [x, y] = get(e);
+    for (const a of d.arcs) {
+      for (const p of [arcPoints(a)[0], arcPoints(a)[12]]) if (Math.hypot(p[0] - x, p[1] - y) < SNAP) { set(e, p); break; }
+    }
+    const [x2, y2] = get(e);
+    for (const c of rings) {
+      const dist = Math.hypot(x2 - c.x, y2 - c.y);
+      if (dist < 1e-6 || Math.abs(dist - c.r) >= SNAP) continue;
+      if (c.sweep) { // only onto the part of the ring an arc actually covers
+        const bearing = (Math.atan2(y2 - c.y, x2 - c.x) * 180) / Math.PI + 90;
+        if ((deg(bearing) - c.from + 360) % 360 > c.sweep) continue;
+      }
+      set(e, [c.x + ((x2 - c.x) * c.r) / dist, c.y + ((y2 - c.y) * c.r) / dist]);
+      break;
+    }
+  }
+  const done = new Set();
+  for (const e of ends) {
+    if (done.has(e)) continue;
+    const group = ends.filter((f) => !done.has(f) && Math.hypot(get(f)[0] - get(e)[0], get(f)[1] - get(e)[1]) < SNAP);
+    const mx = group.reduce((t, f) => t + get(f)[0], 0) / group.length;
+    const my = group.reduce((t, f) => t + get(f)[1], 0) / group.length;
+    for (const f of group) { set(f, [mx, my]); done.add(f); }
+  }
+  // Drop lines that have shrunk to a dot.
+  d.lines = d.lines.filter((l) => Math.hypot(l.x2 - l.x1, l.y2 - l.y1) > 1);
+}
+
+// Whatever the model sent, cut down to the rules and tidied up: fitted inside the field,
+// with ends that nearly meet joined. Lines are kept before arcs if there are too many strokes.
+export function normaliseDesign(raw) {
+  // Shapes with a missing or junk position are dropped rather than guessed at.
+  const lines = list(raw?.lines)
+    .map((l) => ({ x1: num(l?.x1), y1: num(l?.y1), x2: num(l?.x2), y2: num(l?.y2) }))
+    .filter((l) => ok(l.x1, l.y1, l.x2, l.y2))
+    .slice(0, RULES.strokes);
+  const arcs = list(raw?.arcs)
+    .filter((a) => ok(num(a?.x), num(a?.y), num(a?.r), num(a?.from), num(a?.to)))
+    .slice(0, RULES.strokes - lines.length)
+    .map((a) => {
+      const from = deg(a.from);
+      const sweep = Math.max(15, (deg(a.to) - from + 360) % 360 || 360);
+      return { x: num(a.x), y: num(a.y), r: clamp(a.r, 6, 45), from, sweep };
+    });
+  const d = {
     lines,
     arcs,
-    circles: list(d?.circles).slice(0, RULES.circles).map((c) => ({
-      x: clamp(c?.x, 0, FW), y: clamp(c?.y, 0, FH), r: clamp(c?.r, 4, 45), filled: !!c?.filled,
-    })),
-    cows: list(d?.cows).slice(0, RULES.cows).map((c) => ({
-      x: clamp(c?.x, 11, FW - 11), y: clamp(c?.y, 9, FH - 9), facing: c?.facing === "right" ? "right" : "left",
-    })),
+    circles: list(raw?.circles)
+      .filter((c) => ok(num(c?.x), num(c?.y), num(c?.r)))
+      .slice(0, RULES.circles)
+      .map((c) => ({ x: num(c.x), y: num(c.y), r: clamp(c.r, 4, 45), filled: !!c.filled })),
+    cows: list(raw?.cows)
+      .filter((c) => ok(num(c?.x), num(c?.y)))
+      .slice(0, RULES.cows)
+      .map((c) => ({ x: num(c.x), y: num(c.y), facing: c.facing === "right" ? "right" : "left" })),
   };
+  fitInside(d);
+  snapEnds(d);
+  // Last safety net, in case anything is still out of bounds.
+  for (const l of d.lines) Object.assign(l, { x1: clamp(l.x1, 0, FW), y1: clamp(l.y1, 0, FH), x2: clamp(l.x2, 0, FW), y2: clamp(l.y2, 0, FH) });
+  for (const c of [...d.circles, ...d.arcs]) Object.assign(c, { x: clamp(c.x, 0, FW), y: clamp(c.y, 0, FH), r: Math.max(c.sweep ? 6 : 4, c.r) });
+  for (const c of d.cows) Object.assign(c, { x: clamp(c.x, 11, FW - 11), y: clamp(c.y, 9, FH - 9) });
+  return d;
 }
+
+// A design in the shape the model writes it (arcs as from/to), for showing it back.
+export const designForModel = (d) => {
+  const r1 = (v) => Math.round(v * 10) / 10;
+  return {
+    lines: d.lines.map((l) => ({ x1: r1(l.x1), y1: r1(l.y1), x2: r1(l.x2), y2: r1(l.y2) })),
+    arcs: d.arcs.map((a) => ({ x: r1(a.x), y: r1(a.y), r: r1(a.r), from: r1(a.from), to: r1((a.from + a.sweep) % 360) })),
+    circles: d.circles.map((c) => ({ x: r1(c.x), y: r1(c.y), r: r1(c.r), filled: c.filled })),
+    cows: d.cows.map((c) => ({ x: r1(c.x), y: r1(c.y), facing: c.facing })),
+  };
+};
 
 // The finished field, for thumbnails.
 export const finishedScene = (d) => ({

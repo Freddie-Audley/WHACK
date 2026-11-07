@@ -1,7 +1,7 @@
-import { Field, normaliseDesign, finishedScene, drawScene, setSpeed } from "./field.js";
+import { Field, normaliseDesign, designForModel, finishedScene, drawScene, setSpeed } from "./field.js";
 import { splitWords, newTracker, trackFields } from "./message.js";
 import { WebcamPeer } from "./peer.js";
-import { designFields, readFrames, guessSentence, loadKey } from "./api.js";
+import { designFields, reviewFields, readFrames, guessSentence, loadKey } from "./api.js";
 
 // Laptop 1 ("a") is given a sentence and has its saucers cut one crop-circle field per
 // word, with at most 3 strokes (lines or arcs), 2 circles and 2 cows each (see RULES in
@@ -86,12 +86,33 @@ async function send() {
   const field = new Field($("field"));
   working("the aliens are planning their message…");
 
+  const toDesigns = (out, fallback = []) => words.map((word, i) => {
+    const f = out?.fields?.[i];
+    return f ? { word, idea: f.idea ?? "", ...normaliseDesign(f) } : fallback[i] ?? { word, idea: "", ...normaliseDesign({}) };
+  });
+
   let designs;
   try {
-    const out = await retry("designing the fields", () => designFields({ sentence, words }));
-    designs = words.map((word, i) => ({ word, idea: out.fields?.[i]?.idea ?? "", ...normaliseDesign(out.fields?.[i]) }));
+    designs = toDesigns(await retry("designing the fields", () => designFields({ sentence, words })));
   } catch { status("couldn't design the fields. Restart the app to try again."); return; }
-  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${d.lines.length} lines, ${d.arcs.length} arcs, ${d.circles.length} circles, ${d.cows.length} cows`));
+  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${describe(d)}`));
+
+  // Let the alien see how its fields actually came out, and redraw any messy ones.
+  // If this fails, the first designs (already tidied) are used as they are.
+  if (!stopped) {
+    working("the aliens are checking their drawings…");
+    try {
+      const images = designs.map(renderField);
+      const out = await retry("checking the drawings", () => reviewFields({ sentence, words, designs: designs.map(designForModel), images }), 2);
+      const checked = toDesigns(out, designs);
+      checked.forEach((d, i) => {
+        const changed = JSON.stringify(designForModel(d)) !== JSON.stringify(designForModel(designs[i]));
+        if (changed && isEmpty(d) && !isEmpty(designs[i])) { checked[i] = designs[i]; return; } // never trade a picture for nothing
+        if (changed) log(`redrew field ${i + 1} "${d.word}": ${d.idea} — ${describe(d)}`);
+      });
+      designs = checked;
+    } catch { log("carrying on with the first drawings"); }
+  }
   status("");
 
   for (let i = 0; i < designs.length && !stopped; i++) {
@@ -116,6 +137,17 @@ async function send() {
   document.body.classList.remove("send");
   showReveal(sentence, designs);
   log("revealed");
+}
+
+const describe = (d) => `${d.lines.length} lines, ${d.arcs.length} arcs, ${d.circles.length} circles, ${d.cows.length} cows`;
+const isEmpty = (d) => !d.lines.length && !d.arcs.length && !d.circles.length && !d.cows.length;
+
+// A finished field as a JPEG, for the alien to check its own drawing.
+function renderField(d) {
+  const c = document.createElement("canvas");
+  c.width = 640; c.height = 400;
+  drawScene(c.getContext("2d"), 640, 400, finishedScene(d));
+  return c.toDataURL("image/jpeg", 0.85);
 }
 
 function showReveal(sentence, designs) {

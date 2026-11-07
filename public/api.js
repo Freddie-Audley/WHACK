@@ -77,10 +77,73 @@ const RULES = `The rules, which both of you know:
 
 const num = { type: "number" };
 
+// Clean, worked examples for the designer, in exactly the form it answers in.
+const L = (x1, y1, x2, y2) => ({ x1, y1, x2, y2 });
+const none = { lines: [], arcs: [], circles: [], cows: [] };
+export const EXAMPLES = [
+  ["house", { ...none, lines: [L(55, 85, 105, 85), L(55, 85, 55, 52), L(105, 85, 105, 52), L(55, 52, 80, 27), L(80, 27, 105, 52)] }],
+  ["happy", { ...none, arcs: [{ x: 80, y: 50, r: 20, from: 120, to: 240 }],
+    circles: [{ x: 80, y: 50, r: 32, filled: false }, { x: 68, y: 40, r: 4, filled: true }, { x: 92, y: 40, r: 4, filled: true }] }],
+  ["peace", { ...none, lines: [L(80, 14, 80, 86), L(80, 50, 54.5, 75.5), L(80, 50, 105.5, 75.5)], circles: [{ x: 80, y: 50, r: 36, filled: false }] }],
+  ["go", { ...none, lines: [L(25, 50, 135, 50), L(135, 50, 115, 35), L(135, 50, 115, 65)] }],
+  ["person", { ...none, lines: [L(80, 32, 80, 62), L(64, 44, 96, 44), L(80, 62, 68, 84), L(80, 62, 92, 84)], circles: [{ x: 80, y: 24, r: 8, filled: false }] }],
+  ["sun", { ...none, circles: [{ x: 80, y: 50, r: 16, filled: true }],
+    lines: [L(80, 26, 80, 16), L(97, 33, 104, 26), L(104, 50, 114, 50), L(97, 67, 104, 74), L(80, 74, 80, 84), L(63, 67, 56, 74), L(56, 50, 46, 50), L(63, 33, 56, 26)] }],
+  ["tree", { ...none, lines: [L(80, 90, 80, 55)], circles: [{ x: 80, y: 38, r: 20, filled: true }] }],
+  ["rainbow", { ...none, arcs: [{ x: 80, y: 82, r: 45, from: 270, to: 90 }, { x: 80, y: 82, r: 34, from: 270, to: 90 }] }],
+  ["together", { ...none, cows: [{ x: 62, y: 58, facing: "right" }, { x: 98, y: 58, facing: "left" }] }],
+];
+
+const GUIDE = `How to draw cleanly. The stranger sees your field through a webcam, so a clean picture matters more than anything:
+- One clear picture per field, centred and big: let it fill most of the field, but keep every part inside it.
+- Where strokes should touch, give them exactly the same point, so corners close. A line that ends on a ring ends exactly on it.
+- Keep symmetric things symmetric. Use round numbers.
+- Nothing stray: no extra marks, no accidental overlaps, no cow standing on a cut unless that is the point.
+Clean examples, one field each:
+${EXAMPLES.map(([w, d]) => `${w}: ${JSON.stringify(d)}`).join("\n")}`;
+
+const FIELDS_SCHEMA = {
+  type: "object",
+  properties: {
+    fields: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          word: { type: "string" },
+          idea: { type: "string" },
+          lines: {
+            type: "array",
+            items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
+          },
+          arcs: {
+            type: "array",
+            items: { type: "object", properties: { x: num, y: num, r: num, from: num, to: num }, required: ["x", "y", "r", "from", "to"], additionalProperties: false },
+          },
+          circles: {
+            type: "array",
+            items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
+          },
+          cows: {
+            type: "array",
+            items: { type: "object", properties: { x: num, y: num, facing: { type: "string", enum: ["left", "right"] } }, required: ["x", "y", "facing"], additionalProperties: false },
+          },
+        },
+        required: ["word", "idea", "lines", "arcs", "circles", "cows"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["fields"],
+  additionalProperties: false,
+};
+
+const ALIEN = `You are an alien. The only way you can talk to a stranger from another world is by cutting crop circles into a field from your flying saucers. The stranger watches the field from above and must work out your message.`;
+
 // Laptop 1, before the run: design one field per word.
 export async function designFields({ sentence, words }) {
   return call(
-    `You are an alien. The only way you can talk to a stranger from another world is by cutting crop circles into a field from your flying saucers. The stranger watches the field from above and must work out your message.`,
+    ALIEN,
     `Your message: "${sentence}"
 
 ${RULES}
@@ -88,45 +151,24 @@ ${RULES}
 Your ${words.length} fields: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
 
 Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use simple pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave, lines a house, a tree or a person), arrows (three lines), pointing, sizes, counting, positions, and cows as animals, people, a pair, a crowd or pointers. Use only as much as the word needs: fewer, bigger shapes read best. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
-Keep shapes inside the field and big enough to see from across a room.
+
+${GUIDE}
+
 For each field also give "idea": a few words on what you mean it to show.`,
-    {
-      type: "object",
-      properties: {
-        fields: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              word: { type: "string" },
-              idea: { type: "string" },
-              lines: {
-                type: "array",
-                items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
-              },
-              arcs: {
-                type: "array",
-                items: { type: "object", properties: { x: num, y: num, r: num, from: num, to: num }, required: ["x", "y", "r", "from", "to"], additionalProperties: false },
-              },
-              circles: {
-                type: "array",
-                items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
-              },
-              cows: {
-                type: "array",
-                items: { type: "object", properties: { x: num, y: num, facing: { type: "string", enum: ["left", "right"] } }, required: ["x", "y", "facing"], additionalProperties: false },
-              },
-            },
-            required: ["word", "idea", "lines", "arcs", "circles", "cows"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["fields"],
-      additionalProperties: false,
-    },
+    FIELDS_SCHEMA,
     { effort: "high", maxTokens: 12000 },
   );
+}
+
+// Laptop 1, still before the run: look at how each field actually came out, and redraw
+// any that are messy or unclear. `images` are renders of `designs`, in the same order.
+export async function reviewFields({ sentence, words, designs, images }) {
+  const content = [text(`Your message: "${sentence}"\n\n${RULES}\n\n${GUIDE}\n\nHere is how each of your fields came out:`)];
+  words.forEach((w, i) => content.push(text(`Field ${i + 1}, for "${w}": ${JSON.stringify(designs[i])}`), imageBlock(images[i])));
+  content.push(text(`These pictures show exactly what the saucers will cut (the stranger's webcam view will be blurrier). Look at each one hard. Is it one clean, recognisable picture of its word, centred and big, with corners that close and nothing stray, cut off or overlapping by accident? Would the stranger get the word, given the fields around it?
+Return all ${words.length} fields again, in order. Copy the good ones exactly. Redraw any that are messy, unclear or easy to misread.
+For each field also give "idea": a few words on what you mean it to show.`));
+  return call(ALIEN, content, FIELDS_SCHEMA, { effort: "medium", maxTokens: 12000 });
 }
 
 // Laptop 2: sort a batch of webcam frames of laptop 1's screen, in order.

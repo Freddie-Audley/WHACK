@@ -127,7 +127,6 @@ function markPath(ctx, m, X, Y, s) {
 
 function drawMarks(ctx, scene, X, Y, s) {
   ctx.save();
-  ctx.globalAlpha = scene.fade;
   ctx.lineCap = "round";
   ctx.shadowColor = "rgba(255,236,170,0.75)";
   ctx.shadowBlur = 1.4 * s;
@@ -216,11 +215,10 @@ function cowShape(ctx) {
 
 const COW_SCALE = 1.1; // cow units to field units: about 20 wide
 
-function drawCow(ctx, cow, X, Y, s, alpha = 1) {
+function drawCow(ctx, cow, X, Y, s) {
   const lift = cow.h * ALT * 0.85;
   const k = COW_SCALE * s * (0.6 + 0.4 * (1 - cow.h));
   ctx.save();
-  ctx.globalAlpha = alpha;
   // Shadow on the wheat, under its hooves.
   ctx.fillStyle = `rgba(0,0,0,${0.4 * (1 - cow.h * 0.7)})`;
   ctx.beginPath();
@@ -373,12 +371,36 @@ function drawFlag(ctx, f, X, Y, s, now) {
   ctx.restore();
 }
 
+// While the wheat grows back, the cuts and cows fade out together as one picture. Fading
+// each shape on its own would let a cow's legs show through its body.
+let layer = null;
+function drawFaded(ctx, alpha, draw) {
+  const c = ctx.canvas;
+  if (!layer || layer.width !== c.width || layer.height !== c.height) {
+    layer = document.createElement("canvas");
+    layer.width = c.width; layer.height = c.height;
+  }
+  const l = layer.getContext("2d");
+  l.setTransform(1, 0, 0, 1, 0, 0);
+  l.clearRect(0, 0, layer.width, layer.height);
+  l.setTransform(ctx.getTransform());
+  draw(l);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(layer, 0, 0);
+  ctx.restore();
+}
+
 export function drawScene(ctx, W, H, scene, now = 0, dt = 0, bg = null) {
   const { s, X, Y } = layout(W, H);
   if (bg) ctx.drawImage(bg, 0, 0, W, H); else drawGround(ctx, W, H);
-  drawMarks(ctx, scene, X, Y, s);
-  // Cows nearer the bottom of the field stand in front.
-  for (const c of [...scene.cows].sort((a, b) => a.y - b.y)) if (c.h === 0) drawCow(ctx, c, X, Y, s, scene.fade);
+  const picture = (c) => {
+    drawMarks(c, scene, X, Y, s);
+    // Cows nearer the bottom of the field stand in front.
+    for (const cow of [...scene.cows].sort((a, b) => a.y - b.y)) if (cow.h === 0) drawCow(c, cow, X, Y, s);
+  };
+  if (scene.fade < 1) drawFaded(ctx, Math.max(0, scene.fade), picture); else picture(ctx);
   if (scene.flag && scene.flag.h === 0) drawFlag(ctx, scene.flag, X, Y, s, now);
   // Saucer shadows on the wheat, washed out wherever a beam is shining.
   ctx.fillStyle = "rgba(0,0,0,0.28)";

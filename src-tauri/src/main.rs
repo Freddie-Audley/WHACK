@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri::webview::{PermissionKind, PermissionResponse};
+#[cfg(target_os = "macos")]
 use tauri::Manager;
 
 /// The Anthropic key: ANTHROPIC_API_KEY from the environment, else from a .env file
@@ -14,7 +16,10 @@ fn api_key() -> Option<String> {
         ".env".to_string(),
         std::env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|d| d.join(".env").to_string_lossy().into_owned()))
+            .and_then(|p| {
+                p.parent()
+                    .map(|d| d.join(".env").to_string_lossy().into_owned())
+            })
             .unwrap_or_default(),
     ];
     for path in candidates {
@@ -54,9 +59,13 @@ fn native_titlebar(window: &tauri::WebviewWindow) {
 
 fn main() {
     tauri::Builder::default()
-        .setup(|app| {
-            if let Some(w) = app.get_webview_window("main") {
-                #[cfg(target_os = "macos")]
+        .on_permission_request(|_, kind| match kind {
+            PermissionKind::Camera => PermissionResponse::Allow,
+            _ => PermissionResponse::Default,
+        })
+        .setup(|_app| {
+            #[cfg(target_os = "macos")]
+            if let Some(w) = _app.get_webview_window("main") {
                 native_titlebar(&w);
             }
             Ok(())

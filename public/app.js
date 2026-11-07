@@ -1,7 +1,7 @@
 import { Field, normaliseDesign, designForModel, finishedScene, drawScene, setSpeed } from "./field.js";
 import { splitWords, newTracker, trackFields } from "./message.js";
 import { WebcamPeer } from "./peer.js";
-import { designFields, reviewFields, readFrames, guessSentence, loadKey } from "./api.js";
+import { designField, checkField, readFrames, guessSentence, loadKey } from "./api.js";
 
 // Laptop 1 ("a") is given a sentence and has its saucers cut one crop-circle field per
 // word, with at most 3 strokes (lines or arcs), 2 circles and 2 cows each (see RULES in
@@ -85,45 +85,45 @@ async function send() {
   const sentence = $("sentence").value.trim() || $("sentence").placeholder;
   const words = splitWords(sentence);
   const field = new Field($("field"));
-  working("the aliens are planning their message…");
+  working("the aliens are planning their first field…");
 
-  const toDesigns = (out, fallback = []) => words.map((word, i) => {
-    const f = out?.fields?.[i];
-    return f ? { word, idea: f.idea ?? "", ...normaliseDesign(f) } : fallback[i] ?? { word, idea: "", ...normaliseDesign({}) };
-  });
+  // Design the words one at a time, in order, each seeing the fields before it (so a
+  // repeated word gets the same picture). The saucers start on word 1 as soon as it's
+  // ready, while the later words are designed in the background.
+  const designs = [];
+  const ready = words.map(() => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; });
+  (async () => {
+    for (let i = 0; i < words.length; i++) {
+      let d = null;
+      if (!stopped) {
+        try { d = await designWord(sentence, words, i, designs.slice(0, i)); }
+        catch { log(`error: gave up on designing "${words[i]}"`); }
+      }
+      designs[i] = d;
+      ready[i].resolve(d);
+      if (!d) { for (let j = i + 1; j < words.length; j++) ready[j].resolve(null); break; }
+    }
+  })();
 
-  let designs;
-  try {
-    designs = toDesigns(await retry("designing the fields", () => designFields({ sentence, words })));
-  } catch { status("couldn't design the fields. Restart the app to try again."); return; }
-  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${describe(d)}`));
-
-  // Let the alien see how its fields actually came out, and redraw any messy ones.
-  // If this fails, the first designs (already tidied) are used as they are.
-  if (!stopped) {
-    working("the aliens are checking their drawings…");
-    try {
-      const images = designs.map(renderField);
-      const out = await retry("checking the drawings", () => reviewFields({ sentence, words, designs: designs.map(designForModel), images }), 2);
-      const checked = toDesigns(out, designs);
-      checked.forEach((d, i) => {
-        const changed = JSON.stringify(designForModel(d)) !== JSON.stringify(designForModel(designs[i]));
-        if (changed && isEmpty(d) && !isEmpty(designs[i])) { checked[i] = designs[i]; return; } // never trade a picture for nothing
-        if (changed) log(`redrew field ${i + 1} "${d.word}": ${d.idea} — ${describe(d)}`);
-      });
-      designs = checked;
-    } catch { log("carrying on with the first drawings"); }
-  }
-  status("");
-
-  for (let i = 0; i < designs.length && !stopped; i++) {
+  for (let i = 0; i < words.length && !stopped; i++) {
+    // Usually ready long before it's needed. If not, a saucer cruises over the field meanwhile.
+    if (await untilStop(field.cruiseUntil(ready[i].promise))) log(`waited for "${words[i]}" to be designed`);
+    if (stopped) break;
+    const d = await ready[i].promise;
+    if (!d) {
+      status(i ? "" : "couldn't design the fields. Restart the app to try again.");
+      if (i) problem(`couldn't design "${words[i]}", so the message stops here`);
+      if (!i) return;
+      break;
+    }
+    if (!i) status("");
     await wait(FRESH_MS);
     if (stopped) break;
-    log(`cutting "${designs[i].word}"`);
-    await untilStop(field.perform(designs[i]));
+    log(`cutting "${d.word}"`);
+    await untilStop(field.perform(d));
     if (stopped) break;
     await wait(HOLD_MS);
-    if (stopped || i === designs.length - 1) break;
+    if (stopped || i === words.length - 1) break;
     await untilStop(field.regrow());
   }
 
@@ -136,8 +136,30 @@ async function send() {
   await sleep(END_MS / SPEED);
   field.halt();
   document.body.classList.remove("send");
-  showReveal(sentence, designs);
+  showReveal(sentence, words.map((word, i) => designs[i] ?? { word, idea: "", ...normaliseDesign({}) }));
   log("revealed");
+}
+
+const asDesign = (word, f) => ({ word, idea: f?.idea ?? "", ...normaliseDesign(f) });
+
+// One word: design it, then let the alien look at how it came out and redraw it if it's
+// messy. If the check fails, the first (already tidied) design is used as it is.
+async function designWord(sentence, words, i, before) {
+  const word = words[i];
+  const earlier = before.map((d) => ({ word: d.word, idea: d.idea, ...designForModel(d) }));
+  let d = asDesign(word, await retry(`designing "${word}"`, () => designField({ sentence, words, index: i, earlier })));
+  log(`field ${i + 1} "${word}": ${d.idea} — ${describe(d)}`);
+  try {
+    const out = await retry(`checking "${word}"`, () => checkField({ sentence, words, index: i, earlier, design: designForModel(d), image: renderField(d) }), 2);
+    const checked = asDesign(word, out);
+    const changed = JSON.stringify(designForModel(checked)) !== JSON.stringify(designForModel(d));
+    if (changed && !(isEmpty(checked) && !isEmpty(d))) { // never trade a picture for nothing
+      d = checked;
+      log(`redrew field ${i + 1} "${word}": ${d.idea} — ${describe(d)}`);
+    }
+  } catch { log(`carrying on with the first drawing of "${word}"`); }
+  problem();
+  return d;
 }
 
 const describe = (d) => `${d.lines.length} lines, ${d.arcs.length} arcs, ${d.circles.length} circles, ${d.cows.length} cows`;

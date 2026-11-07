@@ -102,73 +102,76 @@ const GUIDE = `How to draw cleanly. The stranger sees your field through a webca
 Clean examples, one field each:
 ${EXAMPLES.map(([w, d]) => `${w}: ${JSON.stringify(d)}`).join("\n")}`;
 
-const FIELDS_SCHEMA = {
+const FIELD_SCHEMA = {
   type: "object",
   properties: {
-    fields: {
+    word: { type: "string" },
+    idea: { type: "string" },
+    lines: {
       type: "array",
-      items: {
-        type: "object",
-        properties: {
-          word: { type: "string" },
-          idea: { type: "string" },
-          lines: {
-            type: "array",
-            items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
-          },
-          arcs: {
-            type: "array",
-            items: { type: "object", properties: { x: num, y: num, r: num, from: num, to: num }, required: ["x", "y", "r", "from", "to"], additionalProperties: false },
-          },
-          circles: {
-            type: "array",
-            items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
-          },
-          cows: {
-            type: "array",
-            items: { type: "object", properties: { x: num, y: num, facing: { type: "string", enum: ["left", "right"] } }, required: ["x", "y", "facing"], additionalProperties: false },
-          },
-        },
-        required: ["word", "idea", "lines", "arcs", "circles", "cows"],
-        additionalProperties: false,
-      },
+      items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
+    },
+    arcs: {
+      type: "array",
+      items: { type: "object", properties: { x: num, y: num, r: num, from: num, to: num }, required: ["x", "y", "r", "from", "to"], additionalProperties: false },
+    },
+    circles: {
+      type: "array",
+      items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
+    },
+    cows: {
+      type: "array",
+      items: { type: "object", properties: { x: num, y: num, facing: { type: "string", enum: ["left", "right"] } }, required: ["x", "y", "facing"], additionalProperties: false },
     },
   },
-  required: ["fields"],
+  required: ["word", "idea", "lines", "arcs", "circles", "cows"],
   additionalProperties: false,
 };
 
 const ALIEN = `You are an alien. The only way you can talk to a stranger from another world is by cutting crop circles into a field from your flying saucers. The stranger watches the field from above and must work out your message.`;
 
-// Laptop 1, before the run: design one field per word.
-export async function designFields({ sentence, words }) {
-  return call(
-    ALIEN,
-    `Your message: "${sentence}"
+// What the alien knows while working on one word: the whole message, and the fields
+// it has already designed (as { word, idea, lines, arcs, circles, cows }).
+const context = (sentence, words, earlier) => `Your message: "${sentence}"
 
 ${RULES}
 
-Your ${words.length} fields: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
+It takes ${words.length} fields, one per word: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
+${earlier.length ? `
+Fields you have already designed:
+${earlier.map(({ word, idea, ...d }, i) => `${i + 1}. "${word}" (${idea}): ${JSON.stringify(d)}`).join("\n")}
+` : ""}`;
 
-Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use simple pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave, lines a house, a tree or a person), arrows (three lines), pointing, sizes, counting, positions, and cows as animals, people, a pair, a crowd or pointers. Use only as much as the word needs: fewer, bigger shapes read best. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
+// Laptop 1: design the field for one word. The saucers start on the first word as soon
+// as it's ready, while later words are still being designed.
+export async function designField({ sentence, words, index, earlier }) {
+  return call(
+    ALIEN,
+    `${context(sentence, words, earlier)}
+Now design field ${index + 1}, for "${words[index]}".
+
+Make it as easy to guess as you can, given the fields around it. Use a simple picture (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave, lines a house, a tree or a person), an arrow (three lines), pointing, size, counting, position, or cows as animals, people, a pair, a crowd or pointers. Use only as much as the word needs: fewer, bigger shapes read best. Leave the field empty only if nothing better fits. If this word already has a field above, use the same design again.
 
 ${GUIDE}
 
-For each field also give "idea": a few words on what you mean it to show.`,
-    FIELDS_SCHEMA,
-    { effort: "medium", maxTokens: 12000 }, // the self-check pass below catches messy drawings
+Also give "idea": a few words on what you mean it to show.`,
+    FIELD_SCHEMA,
+    { effort: "medium", maxTokens: 6000 }, // the check below catches messy drawings
   );
 }
 
-// Laptop 1, still before the run: look at how each field actually came out, and redraw
-// any that are messy or unclear. `images` are renders of `designs`, in the same order.
-export async function reviewFields({ sentence, words, designs, images }) {
-  const content = [text(`Your message: "${sentence}"\n\n${RULES}\n\n${GUIDE}\n\nHere is how each of your fields came out:`)];
-  words.forEach((w, i) => content.push(text(`Field ${i + 1}, for "${w}": ${JSON.stringify(designs[i])}`), imageBlock(images[i])));
-  content.push(text(`These pictures show exactly what the saucers will cut (the stranger's webcam view will be blurrier). Look at each one hard. Is it one clean, recognisable picture of its word, centred and big, with corners that close and nothing stray, cut off or overlapping by accident? Would the stranger get the word, given the fields around it?
-Return all ${words.length} fields again, in order. Copy the good ones exactly. Redraw any that are messy, unclear or easy to misread.
-For each field also give "idea": a few words on what you mean it to show.`));
-  return call(ALIEN, content, FIELDS_SCHEMA, { effort: "medium", maxTokens: 12000 });
+// Laptop 1: look at how one field actually came out, and redraw it if it's messy or unclear.
+export async function checkField({ sentence, words, index, earlier, design, image }) {
+  return call(ALIEN, [
+    text(`${context(sentence, words, earlier)}
+${GUIDE}
+
+Here is how your field ${index + 1}, for "${words[index]}", came out: ${JSON.stringify(design)}`),
+    imageBlock(image),
+    text(`This picture shows exactly what the saucers will cut (the stranger's webcam view will be blurrier). Look at it hard. Is it one clean, recognisable picture of "${words[index]}", centred and big, with corners that close and nothing stray, cut off or overlapping by accident? Would the stranger get the word, given the fields around it?
+Give the field back: copy it exactly if it's good, or redraw it if it's messy, unclear or easy to misread.
+Also give "idea": a few words on what you mean it to show.`),
+  ], FIELD_SCHEMA, { effort: "medium", maxTokens: 6000 });
 }
 
 // Laptop 2: sort a batch of webcam frames of laptop 1's screen, in order.

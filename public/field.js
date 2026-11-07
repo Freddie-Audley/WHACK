@@ -672,6 +672,26 @@ export class Field {
     this.clear();
   }
 
+  // While laptop 1 is still designing the next word, a saucer cruises slowly over the
+  // empty field so the screen never looks frozen. Returns as soon as `promise` settles
+  // (straight away if it already has), and the saucer flies off on its own.
+  async cruiseUntil(promise) {
+    let done = false;
+    promise.then(() => { done = true; }, () => { done = true; });
+    await null; await null; // let an already-settled promise mark itself done
+    if (done) return false;
+    const sc = this.scene, gen = this.gen;
+    const u = { x: -28, y: 25 + Math.random() * 50, beam: false, beamR: 0, phase: 0 };
+    sc.ufos.push(u);
+    const stops = [[45, 30], [115, 35], [115, 70], [45, 68]];
+    for (let k = 0; !done && this.gen === gen; k++) {
+      const [x, y] = stops[k % stops.length], x0 = u.x, y0 = u.y;
+      await tween(1700, (p) => { u.x = lerp(x0, x, p); u.y = lerp(y0, y, p); }, ease);
+    }
+    flyTo(u, FW + 28, u.y).then(() => { sc.ufos = sc.ufos.filter((v) => v !== u); });
+    return true;
+  }
+
   // Message over: a saucer lowers a big chequered flag into the empty field.
   async plantFlag() {
     const sc = this.scene;

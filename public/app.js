@@ -10,8 +10,10 @@ const q = new URLSearchParams(location.search);
 const N = Math.min(CATEGORIES.length, +q.get("n") || CATEGORIES.length);
 const TOTAL_MS = (+q.get("t") || 90) * 1000; // the whole encounter, from pressing the button
 const REPORT_MS = TOTAL_MS - 18000;          // the guesser stops guessing after this and writes home
-const INK_MS = 3500;                         // the drawing appears over this long, board already up
-const HOLD_MS = 5000;                        // how long the finished board stays up
+const INK_MS = 2000;                         // the drawing appears over this long, board already up
+const HOLD_MS = 3000;                        // how long the finished board stays up
+// Describer: time to read what it says it's about to draw, longer for longer lines.
+const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
 const PICTURES = 4;                          // the describer gets this many boards for the whole world
 const IDLE = ["Hello?", "They're thinking.", "Take your time.", "Is this thing on?"];
@@ -46,6 +48,7 @@ const editorGrid = emptyGrid();
 renderEditorBoard(editorCanvas, editorGrid);
 let scene, imagined, peer, t0;
 let editorPen = "#";
+let editorTool = "pen";
 let drawing = false;
 const touchOnly = matchMedia("(pointer: coarse)").matches; // phones: no tool buttons, just Clear
 
@@ -65,9 +68,40 @@ function paintPixel(event) {
   renderEditorBoard(editorCanvas, editorGrid);
 }
 
+function fillArea(x, y) {
+  const target = editorGrid[y][x];
+  if (target === editorPen) return;
+
+  const pixels = Array.from({ length: SIZE * SIZE }, () => false);
+  const stack = [y * SIZE + x];
+  pixels[stack[0]] = true;
+  while (stack.length) {
+    const index = stack.pop();
+    const px = index % SIZE, py = Math.floor(index / SIZE);
+    if (editorGrid[py][px] !== target) continue;
+
+    const row = [...editorGrid[py]];
+    row[px] = editorPen;
+    editorGrid[py] = row.join("");
+    for (const [nx, ny] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
+      const neighbor = ny * SIZE + nx;
+      if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && !pixels[neighbor] && editorGrid[ny][nx] === target) {
+        pixels[neighbor] = true;
+        stack.push(neighbor);
+      }
+    }
+  }
+  renderEditorBoard(editorCanvas, editorGrid);
+}
+
 editorCanvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
+  if (editorTool === "fill") {
+    const { x, y } = pixelAt(event);
+    fillArea(x, y);
+    return;
+  }
   if (touchOnly) { const { x, y } = pixelAt(event); editorPen = editorGrid[y][x] === "#" ? "." : "#"; }
   drawing = true;
   editorCanvas.setPointerCapture(event.pointerId);
@@ -83,6 +117,12 @@ function selectPen(color) {
   editorPen = color;
   $("pen-black").setAttribute("aria-pressed", String(color === "#"));
   $("pen-white").setAttribute("aria-pressed", String(color === "."));
+}
+
+function selectEditorTool(tool) {
+  editorTool = tool;
+  $("brush-tool").setAttribute("aria-pressed", String(tool === "pen"));
+  $("fill-tool").setAttribute("aria-pressed", String(tool === "fill"));
 }
 
 let sent = 0;            // describer: boards shown so far
@@ -120,7 +160,7 @@ async function waitFor(pred, ms) {
   return false;
 }
 
-// Describer: mutter, put the board up, then draw on it while they watch. It stays up until lower().
+// Describer: say what it's about to draw, give them time to read it, put the board up, then draw on it while they watch. It stays up until lower().
 async function show() {
   const k = sent++;
   scene.pose = "drawing";
@@ -130,7 +170,7 @@ async function show() {
   const grid = cleanGrid(out.rows);
   log(`draw "${describeFacts(pictures[k])}" — ${out.note} / "${out.thought}" / "${out.after}"`);
   say(out.thought);
-  await sleep(1500);
+  await sleep(readMs(out.thought));
   scene.pose = "raised";
   document.body.classList.add("raised");
   await sleep(300);
@@ -314,6 +354,8 @@ addEventListener("keydown", (e) => {
   $("startE").onclick = () => earth();
   $("pen-black").onclick = () => selectPen("#");
   $("pen-white").onclick = () => selectPen(".");
+  $("brush-tool").onclick = () => selectEditorTool("pen");
+  $("fill-tool").onclick = () => selectEditorTool("fill");
   $("wipe").onclick = () => wipe();
   if (touchOnly) $("wipe").textContent = "Clear";
   document.body.classList.add("ready");

@@ -145,6 +145,7 @@ function frame(now) {
   const base = segs[POLE_AT].position, f = segs[POLE_AT - 1].position, b = segs[POLE_AT + 3].position;
   flag.position.set(base.x, 2 * R * segs[POLE_AT].scale.x - 0.04, base.z);
   flag.rotation.y = -Math.atan2(f.z - b.z, f.x - b.x); // the cloth streams out behind
+  flag.visible = f.x > b.x; // furled on the way back, behind the buttons (it turns round out of sight)
   const pos = clothGeo.attributes.position;
   for (let i = 0; i < pos.count; i++) { const u = -flatX[i] / FW; pos.setZ(i, 0.09 * u * Math.sin(5 * u - t * 6)); }
   pos.needsUpdate = true;

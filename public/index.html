@@ -55,11 +55,10 @@
   #cam .frame { position: relative; }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
   #preview { display: none; }
-  #seen { display: none; position: absolute; top: 8px; left: 8px; padding: 4px 10px; border-radius: 8px; background: #ff00ff; color: #fff; font-weight: 600; }
-  body.spotted #cam { box-shadow: 0 0 0 4px #ff00ff; }
+  #seen { display: none; position: absolute; top: 8px; left: 8px; width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #1d1d3a; font-size: 17px; font-weight: 600; line-height: 28px; text-align: center; box-shadow: 0 1px 4px rgba(40,30,80,.2); }
   body.spotted #seen { display: block; }
-  /* The processed crop (what the model reads), beside the webcam while a board is in view. */
-  #processed { position: fixed; left: 364px; bottom: 16px; height: 191px; display: none; z-index: 5; border-radius: 12px; background: #fff; box-shadow: 0 0 0 4px #ff00ff; }
+  /* The processed crop (what the model reads), beside the webcam while a board is in view; mirrored like the webcam. */
+  #processed { position: fixed; left: 364px; bottom: 16px; height: 191px; display: none; z-index: 5; border-radius: 12px; background: #fff; transform: scaleX(-1); box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   body.spotted #processed[src] { display: block; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -135,7 +134,7 @@
   <div class="frame">
     <video id="video" playsinline muted></video>
     <canvas id="overlay" width="320" height="180"></canvas>
-    <div id="seen">Board spotted</div>
+    <div id="seen" aria-label="Board spotted">✓</div>
   </div>
   <canvas id="preview" width="160" height="90"></canvas>
 </div>

@@ -19,7 +19,7 @@ scene.add(sun);
 
 const flat = (color) => new THREE.MeshStandardMaterial({ color, flatShading: true });
 const skin = flat(0x5f9e45), band = flat(0xe0c050), red = flat(0xd8434f), white = flat(0xffffff), dark = flat(0x111111);
-const N = 16, R = 0.24, A = 0.35, C = 1.6, SPEED = 1, MIDDLE = -2, UFO_Z = MIDDLE; // the UFO hovers over the middle of the snake's circuit
+const N = 16, R = 0.24, A = 0.35, C = 1.6, SPEED = 1, UFO_Z = -2; // the UFO hovers just behind the snake's path
 const googly = (r, x, y, z) => { // a white eye with a pupil, looking along +z
   const eye = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), white);
   eye.position.set(x, y, z);
@@ -125,27 +125,27 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-// The snake goes round and round under the UFO: rightwards across the front, in front of the buttons, turning
-// round off the edges of the window, and back behind them. It wiggles from side to side as it goes.
-const RX = 7, RZ = 1, START = RX * (Math.PI + 0.87); // starting with its head just off the left of the front, all of it out of sight
-function onPath(s, k) {
-  const q = s - (k < 0 ? 0 : gap[k]), a = -(q + START) / RX, wiggle = A * Math.sin(C * q);
-  const nx = Math.cos(a) / RX, nz = Math.sin(a) / RZ, n = Math.hypot(nx, nz); // outwards, across the path
-  return [RX * Math.cos(a) + (wiggle * nx) / n, MIDDLE + RZ * Math.sin(a) + (wiggle * nz) / n];
+// The snake slithers rightwards along the front, under the UFO and in front of the buttons, wiggling from side to
+// side; once it is all out of sight on the right it comes round again from the left.
+const FRONT = -1;
+function onPath(x, s, k) {
+  const q = s - (k < 0 ? 0 : gap[k]);
+  return [x - (k < 0 ? 0 : gap[k]), FRONT + A * Math.sin(C * q)];
 }
 
 function frame(now) {
   if (start.classList.contains("hide")) return; // the game has begun: stop
   const t = now / 1000, s = t * SPEED;
-  segs.forEach((seg, k) => { const [x, z] = onPath(s, k); seg.position.set(x, R * seg.scale.x, z); });
-  const [hx, hz] = onPath(s, -1), [nx, nz] = onPath(s + 0.05, -1);
+  const half = Math.tan(camera.fov * Math.PI / 360) * (camera.position.z - FRONT) * camera.aspect; // half the window's width, where it goes
+  const from = -half - 0.6, to = half + gap[N - 1] + 0.6, x = from + (s % (to - from)); // head: from just off the left until the tail is off the right
+  segs.forEach((seg, k) => { const [sx, sz] = onPath(x, s, k); seg.position.set(sx, R * seg.scale.x, sz); });
+  const [hx, hz] = onPath(x, s, -1), [nx, nz] = onPath(x + 0.05, s + 0.05, -1);
   head.position.set(hx, 0.25, hz);
   head.rotation.set(0, -Math.atan2(nz - hz, nx - hx), 0);
   tongue.scale.x = Math.sin(t * 1.3) > 0.5 ? Math.abs(Math.sin(t * 25)) : 0.01;
   const base = segs[POLE_AT].position, f = segs[POLE_AT - 1].position, b = segs[POLE_AT + 3].position;
   flag.position.set(base.x, 2 * R * segs[POLE_AT].scale.x - 0.04, base.z);
   flag.rotation.y = -Math.atan2(f.z - b.z, f.x - b.x); // the cloth streams out behind
-  flag.visible = f.x > b.x; // furled on the way back, behind the buttons (it turns round out of sight)
   const pos = clothGeo.attributes.position;
   for (let i = 0; i < pos.count; i++) { const u = -flatX[i] / FW; pos.setZ(i, 0.09 * u * Math.sin(5 * u - t * 6)); }
   pos.needsUpdate = true;

@@ -56,7 +56,7 @@ export class WebcamPeer {
   capture() {
     const vw = this.video.videoWidth, vh = this.video.videoHeight;
     const b = this.box || { x: 0, y: 0, w: 1, h: 1 };
-    const pad = 0.15;
+    const pad = 0.05;
     const x0 = Math.max(0, (b.x - b.w * pad) * vw), y0 = Math.max(0, (b.y - b.h * pad) * vh);
     const x1 = Math.min(vw, (b.x + b.w * (1 + pad)) * vw), y1 = Math.min(vh, (b.y + b.h * (1 + pad)) * vh);
     const c = document.createElement("canvas");
@@ -74,14 +74,13 @@ export class WebcamPeer {
     const ctx = this.overlay.getContext("2d");
     const w = this.overlay.width, h = this.overlay.height;
     ctx.clearRect(0, 0, w, h);
-    const up = this.fraction > this.threshold;
     if (!this.box) return;
-    const b = this.box, pad = 0.15;
+    const b = this.box, pad = 0.05;
     const x = (b.x - b.w * pad) * w, y = (b.y - b.h * pad) * h, bw = b.w * (1 + 2 * pad) * w, bh = b.h * (1 + 2 * pad) * h;
     ctx.fillStyle = "rgba(0,0,0,.35)";
     ctx.fillRect(0, 0, w, h);
     ctx.clearRect(x, y, bw, bh);
-    const colour = up ? "#ff00ff" : "rgba(255,255,255,.9)";
+    const colour = "rgba(255,255,255,.9)";
     ctx.strokeStyle = colour;
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, bw, bh);

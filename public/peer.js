@@ -12,11 +12,14 @@ export class WebcamPeer {
     this.threshold = threshold;
     this.fraction = 0;
     this.box = null; // { x, y, w, h } as fractions of the frame, or null when no board is in view
+    // Whether the board is up, judged on every frame so a quick dip is never missed: it changes once the
+    // magenta has been in (or out of) view for a moment. `rises` and `falls` count the changes.
+    this.up = false; this.seenUp = false; this.since = 0; this.rises = 0; this.falls = 0;
   }
   async start() {
     this.video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
     await this.video.play();
-    const loop = () => { this.sample(); this.drawOverlay(); requestAnimationFrame(loop); };
+    const loop = () => { this.sample(); this.track(); this.drawOverlay(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
   // Magenta fraction of the frame, and the bounding box of the magenta pixels.
@@ -44,6 +47,11 @@ export class WebcamPeer {
     return this.fraction;
   }
   raised() { return this.sample() > this.threshold; }
+  track() {
+    const now = performance.now(), up = this.fraction > this.threshold;
+    if (up !== this.seenUp) { this.seenUp = up; this.since = now; }
+    if (up !== this.up && now - this.since > 250) { this.up = up; if (up) this.rises++; else this.falls++; }
+  }
   // The frame cropped to the board (with a margin), or the whole frame if no board is in view.
   capture() {
     const vw = this.video.videoWidth, vh = this.video.videoHeight;

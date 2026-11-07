@@ -32,7 +32,8 @@ const log = (m) => {
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
 // The ambassador writes with no dashes, semicolons or colons: those become commas or full stops.
-const plain = (m) => m.replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim();
+// And it says one sentence at a time, whatever the model sent.
+const plain = (m) => m.replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim().split(/(?<=[.?!…])\s+/)[0];
 const say = (m) => scene?.say(m == null ? m : plain(m));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -124,7 +125,6 @@ let sent = 0;            // describer: boards shown so far
 const guesses = {};      // guesser: category id -> reading, committed once the board came down
 let pending = null;      // guesser: reading of the board that is up right now; may still change
 const notes = [];        // guesser: what it concluded from each board, for the report home
-let boards = 0;          // guesser: boards seen so far
 let firstWords = [];     // guesser: lines for the moment a board comes up, fetched at the start
 const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
@@ -152,17 +152,6 @@ function prefetch() {
 async function waitFor(pred, ms) {
   for (let t = 0; t < ms && !closing; t += 200) { if (pred()) return true; await sleep(200); }
   return false;
-}
-
-// True once when the describer's board comes up: two consistent samples, after it was down.
-let peerWas = false, lastSample = false, stable = 0;
-function rose() {
-  const r = peer.raised();
-  stable = r === lastSample ? stable + 1 : 0;
-  lastSample = r;
-  if (stable < 1 || r === peerWas) return false;
-  peerWas = r;
-  return r;
 }
 
 // Describer: mutter, put the board up, then draw on it while they watch. It stays up until lower().
@@ -203,31 +192,25 @@ async function describe() {
   over = true;
 }
 
-// True when the board has been out of view for two samples in a row.
-async function lowered() {
-  for (let i = 0; i < 2; i++) { if (peer.raised()) return false; await sleep(200); }
-  return true;
-}
-
 // Guesser: their board is up. Keep reading it as the drawing grows, thinking aloud and changing
 // the imagined world as the reading changes; commit whatever was last understood when it comes down.
 async function readBoard() {
   document.body.classList.add("spotted");
-  boards++;
+  const falls = peer.falls, down = () => peer.falls !== falls; // the board has gone down since it came up
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
   await sleep(500); // let their board settle in frame
   let reading = null;
-  while (!closing && !(await lowered())) {
+  while (!closing && !down()) {
     try {
       const out = await interpret({ image: peer.capture(), categories: CATEGORIES, believed: guesses, previous: reading });
       const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
       const changed = !reading || key(reading) !== key(out);
-      log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} (${out.reasoning}) / "${out.thought}"`);
+      log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} / "${out.thought}"`);
       reading = pending = out;
       if (changed) showGuesses();
       say(out.thought);
     } catch (e) { log(`error: ${e.message}`); }
-    await sleep(PAUSE_MS);
+    await waitFor(down, PAUSE_MS);
   }
   document.body.classList.remove("spotted");
   pending = null;
@@ -239,11 +222,13 @@ async function readBoard() {
   showGuesses();
 }
 
-// Guesser: every time their board comes up, read it until it goes down; stop after the last board or when the clock runs out.
+// Guesser: every time their board comes up, read it until it goes down, for as many boards as come up
+// (people at the controls can keep going) until the clock runs out.
 async function guess() {
   say(pick(IDLE));
-  while (!closing && boards < pictures.length) {
-    if (await waitFor(rose, TOTAL_MS)) await readBoard();
+  let seen = 0;
+  while (!closing) {
+    if (await waitFor(() => peer.rises > seen, TOTAL_MS)) { seen = peer.rises; await readBoard(); }
   }
   await finish();
 }
@@ -285,12 +270,12 @@ async function wipe() {
   if (wiping) return;
   wiping = true;
   log(`wipe: ${editorGrid.join("/")}`);
-  document.body.classList.add("down");
-  await sleep(1500);
+  document.body.classList.add("down"); // runs the whole dip: down, a pause out of sight, back up
+  await sleep(950);
   editorGrid.splice(0, editorGrid.length, ...emptyGrid());
   renderEditorBoard(editorCanvas, editorGrid);
+  await sleep(950);
   document.body.classList.remove("down");
-  await sleep(400);
   wiping = false;
 }
 
@@ -340,7 +325,7 @@ addEventListener("keydown", (e) => {
 (async () => {
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
-  if (!key) $("roles").style.display = "none"; // without a key only Contact from Earth works
+  if (key) document.body.classList.add("key"); // without one only Contact from Earth works
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
   $("startE").onclick = () => earth();
@@ -349,4 +334,5 @@ addEventListener("keydown", (e) => {
   $("brush-tool").onclick = () => selectEditorTool("pen");
   $("fill-tool").onclick = () => selectEditorTool("fill");
   $("wipe").onclick = () => wipe();
+  document.body.classList.add("ready");
 })();

@@ -27,16 +27,22 @@
   body.earth #stage { display: block; }
   body.earth #editor { display: flex; }
   .editor-main { flex: 1; min-height: 0; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
-  #pixel-board-frame { grid-column: 2; grid-row: 1; width: var(--board); aspect-ratio: 1; overflow: hidden; border: calc(var(--board) * .05) solid #ff00ff; padding: 2px; border-radius: 6px; background: #fff; box-shadow: 0 8px 30px rgba(40,30,80,.25); transition: transform .4s; }
-  body.earth.down #pixel-board-frame { transform: translateY(100vh); }
+  #pixel-board-frame { grid-column: 2; grid-row: 1; width: var(--board); aspect-ratio: 1; overflow: hidden; border: calc(var(--board) * .05) solid #ff00ff; padding: 2px; border-radius: 6px; background: #fff; box-shadow: 0 8px 30px rgba(40,30,80,.25); }
+  /* Wipe: one animation down and back up (the board is cleared while it is out of sight). */
+  body.earth.down #pixel-board-frame { animation: dip 1.9s ease-in-out; }
+  @keyframes dip { 0%, 100% { transform: none; } 25%, 75% { transform: translateY(100vh); } }
   #pixel-board { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
   .editor-tools { grid-column: 3; grid-row: 1; justify-self: start; margin-left: 20px; display: grid; grid-template-columns: repeat(2, 68px); gap: 10px; }
-  #editor .square-button { width: 68px; height: 68px; padding: 0; display: grid; place-items: center; }
-  #editor .square-button[aria-pressed="true"] { box-shadow: 0 0 0 3px #1d1d3a, 0 2px 8px rgba(40,30,80,.15); }
-  #pen-black { background: #111; }
-  #pen-white { background: #fff; }
+  /* The selected tool gets a black outline. */
+  #editor .square-button { --back: rgba(255,255,255,.4); width: 68px; height: 68px; padding: 0; display: grid; place-items: center; background: var(--back); touch-action: manipulation; }
+  #editor .square-button[aria-pressed="true"] { box-shadow: 0 0 0 3px #111, 0 2px 8px rgba(40,30,80,.15); }
+  /* Colour buttons: a swatch inset in the button. */
+  #editor .pen { --m: 10px; padding: var(--m); background: linear-gradient(var(--ink), var(--ink)) content-box, linear-gradient(var(--back), var(--back)); }
+  /* Wipe sits with the tools, as wide as two of them. */
+  #editor #wipe { grid-column: span 2; width: auto; }
+  #pen-black { --ink: #111; }
+  #pen-white { --ink: #fff; }
   .editor-tools img { width: 42px; height: 42px; object-fit: contain; }
-  #wipe { align-self: center; margin-bottom: 12px; padding: 12px 40px; background: rgba(255,255,255,.9); touch-action: manipulation; }
 
   .title { font-size: 40px; font-weight: 500; }
 
@@ -55,14 +61,22 @@
   #card h1 { margin: 0; color: #000; }
   #card p { margin: -10px 0 32px; color: #000; }
   .row { display: flex; gap: 12px; align-items: center; }
+  /* Until the code has loaded (three.js comes from a CDN) the buttons would do nothing, so they wait; the two
+     that need a key only appear once there is one. */
+  #roles { display: none; }
+  #startE { visibility: hidden; }
+  body.ready #startE { visibility: visible; }
+  body.ready.key #roles { display: flex; }
   button { font: inherit; font-size: 17px; font-weight: 600; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
   #nokey { color: #c0392b; display: none; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
     .editor-main { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
     #pixel-board-frame { flex: 0 0 auto; }
-    .editor-tools { grid-template-columns: repeat(4, 56px); gap: 8px; margin-left: 0; }
+    .editor-tools { grid-template-columns: repeat(4, 56px) 80px; gap: 8px; margin-left: 0; }
+    #editor #wipe { grid-column: auto; width: 80px; }
     #editor .square-button { width: 56px; height: 56px; }
+    #editor .pen { --m: 8px; }
     .editor-tools img { width: 32px; height: 32px; }
   }
   @media (max-height: 600px) {
@@ -77,7 +91,6 @@
     #editor { inset: calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px); }
     button { border-radius: 22px; }
     #pixel-board-frame { border-radius: 14px; }
-    #wipe { padding: 14px 40px; }
   }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
@@ -92,17 +105,17 @@
       <canvas id="pixel-board" width="640" height="640" aria-label="12 by 12 pixel whiteboard. Draw with the selected color."></canvas>
     </div>
     <div class="editor-tools" aria-label="Pixel editor tools">
-      <button id="pen-black" class="square-button" type="button" aria-label="Black pixels" aria-pressed="true"></button>
-      <button id="pen-white" class="square-button" type="button" aria-label="White pixels" aria-pressed="false"></button>
+      <button id="pen-black" class="square-button pen" type="button" aria-label="Black pixels" aria-pressed="true"></button>
+      <button id="pen-white" class="square-button pen" type="button" aria-label="White pixels" aria-pressed="false"></button>
       <button id="brush-tool" class="square-button" type="button" aria-label="Brush" aria-pressed="true">
         <img src="resources/paint_brush.png" alt="">
       </button>
       <button id="fill-tool" class="square-button" type="button" aria-label="Fill area" aria-pressed="false">
         <img src="resources/paint_bucket.svg" alt="">
       </button>
+      <button id="wipe" class="square-button" type="button">Wipe</button>
     </div>
   </div>
-  <button id="wipe" type="button">Wipe</button>
 </main>
 
 <div id="cam">

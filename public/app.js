@@ -1,12 +1,13 @@
 import { generateSeed } from "./worlds.js";
-import { prepareSequence, collapseReadings, sanitiseSvg, svgUrl, svgToJpeg } from "./board.js";
+import { cleanList, prepareSequence, collapseReadings, sanitiseSvg, svgUrl, svgToJpeg } from "./board.js";
 import { WebcamPeer } from "./peer.js";
-import { paintWorld, planEmojis, readFrames, paintGuess, loadKey } from "./api.js";
+import { paintWorld, planEmojis, adjustEmojis, readFrames, paintGuess, loadKey } from "./api.js";
 
 // Laptop 1 ("a") paints a secret world and shows it to laptop 2 one emoji per second
 // on a white screen. Laptop 2 ("b") watches through its webcam and keeps repainting
-// what it imagines. Space (or the end of the sequence) stops the run, then laptop 1
-// shows 🏁 and reveals the real world.
+// what it imagines. Laptop 1 watches that painting through its own webcam and steers
+// its next emojis towards what's wrong. Space (or the end of the run) stops it, then
+// laptop 1 shows 🏁 and reveals the real world.
 const q = new URLSearchParams(location.search);
 const COUNT = Math.max(1, +q.get("n") || 60); // emojis per run, one per second
 const SECOND = +q.get("ms") || 1000;
@@ -75,8 +76,25 @@ async function retry(what, fn, tries = 3) {
   }
 }
 
+// Laptop 1's own webcam points at laptop 2's painting. Every few emojis it takes a look,
+// compares the painting with the real world, and puts corrections at the front of the
+// queue. The original plan stays underneath, so a failed look or no webcam just means
+// it carries on with the plan.
+const FIRST_LOOK = 12; // emojis shown before the first look (laptop 2 needs time to read and paint)
+const LOOK_EVERY = 8;  // at least this many emojis between looks
+const AHEAD = 10;      // emojis asked for per look
+
 async function describe() {
   working("imagining a world…");
+
+  // Start the webcam now, so any permission prompt comes up while the world is painted.
+  let cam = null, camError = "", over = false;
+  const eye = new WebcamPeer($("video"));
+  const camOff = () => eye.video.srcObject?.getTracks().forEach((t) => t.stop());
+  eye.start()
+    .then(() => { if (over) return camOff(); cam = eye; log("webcam on, watching their painting"); })
+    .catch((e) => { camError = e.message || String(e); log(`error: webcam: ${camError}`); });
+
   const seed = generateSeed();
   let world;
   try {
@@ -84,28 +102,67 @@ async function describe() {
       const out = await paintWorld({ seed });
       return { title: out.title, svg: sanitiseSvg(out.svg) };
     });
-  } catch { status("couldn't paint a world. Restart the app to try again."); return; }
+  } catch { over = true; camOff(); status("couldn't paint a world. Restart the app to try again."); return; }
   log(`world: "${world.title}" from ${seed}`);
 
-  let sequence = [];
+  let image = null, sequence = [];
   if (!stopped) {
     working("deciding what to say…");
-    const image = await svgToJpeg(world.svg);
+    image = await svgToJpeg(world.svg);
     if (!image) log("no raster in this webview, describing from the SVG source");
     try {
       const plan = await retry("planning the emojis", () => planEmojis({ image, svg: image ? null : world.svg, count: COUNT }));
       sequence = prepareSequence(plan.emojis ?? [], COUNT, END);
       log(`plan: ${plan.plan} — ${sequence.join(" ")}`);
-    } catch { status("couldn't plan the emojis. Restart the app to try again."); return; }
-    if (!sequence.length) { status("Claude gave no usable emojis. Restart the app to try again."); return; }
+    } catch { over = true; camOff(); status("couldn't plan the emojis. Restart the app to try again."); return; }
+    if (!sequence.length) { over = true; camOff(); status("Claude gave no usable emojis. Restart the app to try again."); return; }
   }
   status("");
+  if (camError) problem(`no webcam, so not watching their painting (${camError})`);
+
+  const shown = [];
+  const base = sequence.slice(); // the original plan
+  let fresh = [];                // corrections from the latest look
+  const lastShown = () => shown[shown.length - 1];
+  const next = () => {
+    while (fresh.length || base.length) {
+      const e = fresh.length ? fresh.shift() : base.shift();
+      if (e !== lastShown()) return e;
+    }
+    return null;
+  };
+
+  let looking = false, lookedAt = -Infinity;
+  async function look() {
+    const view = cam.capture(1024);
+    if (!view) return;
+    looking = true;
+    lookedAt = shown.length;
+    try {
+      const out = await adjustEmojis({
+        image, svg: image ? null : world.svg, view,
+        shown: shown.slice(), upcoming: [...fresh, ...base].slice(0, AHEAD), count: AHEAD,
+      });
+      fresh = cleanList(out.emojis, END, lastShown());
+      log(`looked after ${lookedAt}: ${out.seen} / fix: ${out.fix} → ${fresh.join(" ")}`);
+    } catch (e) {
+      log(`error: look: ${e.message}`);
+    }
+    looking = false;
+  }
 
   const t0 = performance.now();
-  for (let i = 0; i < sequence.length && !stopped; i++) {
-    $("emoji").textContent = sequence[i];
+  for (let i = 0; i < COUNT && !stopped; i++) {
+    const e = next();
+    if (!e) break;
+    $("emoji").textContent = e;
+    shown.push(e);
+    if (cam && !looking && shown.length >= FIRST_LOOK && shown.length - lookedAt >= LOOK_EVERY) look();
     await nap(t0 + (i + 1) * SECOND - performance.now());
   }
+  over = true;
+  camOff();
+  log(`shown: ${shown.join(" ")}`);
 
   $("emoji").textContent = END;
   await sleep(END_MS);

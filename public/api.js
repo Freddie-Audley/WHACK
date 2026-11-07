@@ -86,34 +86,74 @@ Also give a short private title.`,
   );
 }
 
-// Laptop 1: look at the world and plan the whole emoji sequence up front (the channel is one-way).
+const DESCRIBER = `You are standing in front of a white screen that can show exactly one emoji at a time, one per second. A stranger from another world watches it through a webcam. They have never seen your world and will paint what they think it looks like, updating their painting as each emoji arrives. You want their painting to match yours as closely as possible.`;
+
+const EMOJI_RULES = `- Coloured squares and circles (🟪 🟦 🟧 🟩 ⬛ ⬜ 🟣 🔵 …) are good for colours. Arrows are fine for positions.
+- Repeating an important idea is fine, but never the same emoji twice in a row.
+- No flags, letters, digits or keycaps. Never use 🏁.`;
+
+const emojiList = { type: "array", items: { type: "string", description: "Exactly one emoji" } };
+
+// The secret world, as a picture if the webview could rasterise it, else as SVG source.
+const worldBlocks = (image, svg, label) => image
+  ? [{ type: "text", text: `${label}:` }, imageBlock(image)]
+  : [{ type: "text", text: `${label}, as SVG:\n${svg}` }];
+
+// Laptop 1, before the run: plan a whole sequence from the world alone. This is also the
+// fallback for whenever the webcam can't help.
 export async function planEmojis({ image, svg, count }) {
-  const world = image ? [imageBlock(image), { type: "text", text: "This picture is your world." }]
-                      : [{ type: "text", text: `This SVG is your world:\n${svg}` }];
   return call(
-    `You are standing in front of a white screen that can show exactly one emoji at a time, one per second. A stranger from another world watches it through a webcam. They have never seen your world and will paint what they think it looks like, updating their painting as each emoji arrives. You want their painting to match yours as closely as possible.`,
+    DESCRIBER,
     [
-      ...world,
+      ...worldBlocks(image, svg, "Your world"),
       {
         type: "text",
         text: `Plan exactly ${count} emojis to show, in order.
 - Big picture first: sky colour, what the ground is, the biggest shapes. Then smaller things, then details and where things are.
-- Coloured squares and circles (🟪 🟦 🟧 🟩 ⬛ ⬜ 🟣 🔵 …) are good for colours. Arrows are fine for positions.
-- Repeating an important idea later is fine, but never the same emoji twice in a row.
-- No flags, letters, digits or keycaps. Never use 🏁.
+${EMOJI_RULES}
 Also give one sentence on your plan.`,
       },
     ],
     {
       type: "object",
-      properties: {
-        plan: { type: "string" },
-        emojis: { type: "array", items: { type: "string", description: "Exactly one emoji" } },
-      },
+      properties: { plan: { type: "string" }, emojis: emojiList },
       required: ["plan", "emojis"],
       additionalProperties: false,
     },
     { effort: "high", maxTokens: 8000 },
+  );
+}
+
+// Laptop 1, during the run: look at the stranger's painting through its own webcam,
+// compare it with the real world, and pick the next emojis to fix what's most wrong.
+export async function adjustEmojis({ image, svg, view, shown, upcoming, count }) {
+  return call(
+    `${DESCRIBER}
+Your own webcam points at the stranger's laptop, so you can see how their painting is going.`,
+    [
+      ...worldBlocks(image, svg, "Your world"),
+      { type: "text", text: "Your webcam's view of the stranger's laptop right now:" },
+      imageBlock(view),
+      {
+        type: "text",
+        text: `The webcam view is their current painting of your world. The small row of emojis along its bottom edge is what they have read so far. The view may be skewed, blurry or partly cut off. If they haven't painted anything yet, it is just a white screen.
+
+Emojis you have shown so far, in order: ${shown.join(" ") || "(none yet)"}
+What you were going to show next: ${upcoming.join(" ") || "(nothing planned)"}
+
+They lag a few seconds behind, so the last few emojis you showed may not be in their painting yet.
+Compare their painting with your world. Then choose the next ${count} emojis, fixing the biggest difference first (a wrong colour, a missing or wrong big shape, something in the wrong place) before adding detail. If the painting already matches well, carry on with details from your plan.
+${EMOJI_RULES}
+Also give "seen": one short sentence on what their painting shows, and "fix": one short sentence on what you will correct.`,
+      },
+    ],
+    {
+      type: "object",
+      properties: { seen: { type: "string" }, fix: { type: "string" }, emojis: emojiList },
+      required: ["seen", "fix", "emojis"],
+      additionalProperties: false,
+    },
+    { effort: "medium", maxTokens: 4000 },
   );
 }
 

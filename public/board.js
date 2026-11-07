@@ -5,11 +5,23 @@ export function cleanEmoji(s) {
   return [...new Intl.Segmenter().segment((s ?? "").trim())][0]?.segment || "";
 }
 
-// Turn a model's emoji list into what will actually be shown: one emoji each,
-// no blanks, no 🏁 (that means "the end"), never the same one twice in a row
-// (laptop 2 can only see a change). Pads to `count` by recapping from the start.
+// Turn a model's emoji list into what can be shown: one emoji each, no blanks,
+// letters or digits, no 🏁 (that means "the end"), and never the same one twice
+// in a row (laptop 2 can only see a change). `prev` is what's on screen before it.
+export function cleanList(list, END, prev = "") {
+  const out = [];
+  for (const raw of list ?? []) {
+    const e = cleanEmoji(raw);
+    if (!e || e === END || /^[\p{L}\p{N}]$/u.test(e)) continue;
+    if (e === (out.length ? out[out.length - 1] : prev)) continue;
+    out.push(e);
+  }
+  return out;
+}
+
+// The whole planned run, padded to `count` by recapping from the start.
 export function prepareSequence(list, count, END) {
-  const clean = list.map(cleanEmoji).filter((e) => e && e !== END && !/^[\p{L}\p{N}]$/u.test(e));
+  const clean = cleanList(list, END);
   if (!clean.length) return [];
   const out = [];
   for (let i = 0; out.length < count && i < count * 4; i++) {

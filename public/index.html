@@ -6,6 +6,10 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="First Contact">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
   * { box-sizing: border-box; }
@@ -91,6 +95,11 @@
     #editor { inset: calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px); }
     button { border-radius: 22px; }
     #pixel-board-frame { border-radius: 14px; }
+    /* Just the board and Clear: a touch on a black pixel rubs out, anywhere else draws. */
+    #editor { --board: min(calc(100vw - 32px), calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px), 680px); }
+    #editor .pen, #brush-tool, #fill-tool { display: none; }
+    .editor-tools { display: block; }
+    #editor #wipe { width: auto; height: 48px; padding: 0 32px; }
   }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>

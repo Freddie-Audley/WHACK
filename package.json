@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "phone": "python3 -m http.server 8080 --directory public"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4"

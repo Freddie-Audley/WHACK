@@ -48,6 +48,7 @@ let scene, imagined, peer, t0;
 let editorPen = "#";
 let editorTool = "pen";
 let drawing = false;
+const touchOnly = matchMedia("(pointer: coarse)").matches; // phones: no tool buttons, just Clear
 
 function pixelAt(event) {
   const rect = editorCanvas.getBoundingClientRect();
@@ -99,6 +100,7 @@ editorCanvas.addEventListener("pointerdown", (event) => {
     fillArea(x, y);
     return;
   }
+  if (touchOnly) { const { x, y } = pixelAt(event); editorPen = editorGrid[y][x] === "#" ? "." : "#"; }
   drawing = true;
   editorCanvas.setPointerCapture(event.pointerId);
   paintPixel(event);
@@ -130,6 +132,8 @@ const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
 let closing = false;
 let over = false;         // the encounter has ended: R goes back to the menu
+// Opened from a phone's home screen: the app is only the board over Earth, so skip the menu.
+const phoneApp = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
 // Guesser: rebuild the imagined world from the facts understood so far, including the one
 // still being read, which may change its mind; the rest stays white.
@@ -323,6 +327,7 @@ addEventListener("keydown", (e) => {
 });
 
 (async () => {
+  if (phoneApp) earth();
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (key) document.body.classList.add("key"); // without one only Contact from Earth works
@@ -334,5 +339,6 @@ addEventListener("keydown", (e) => {
   $("brush-tool").onclick = () => selectEditorTool("pen");
   $("fill-tool").onclick = () => selectEditorTool("fill");
   $("wipe").onclick = () => wipe();
+  if (touchOnly) $("wipe").textContent = "Clear";
   document.body.classList.add("ready");
 })();

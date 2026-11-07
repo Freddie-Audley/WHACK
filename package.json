@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "phone": "python3 -m http.server 8080 --directory public"
+    "phone": "echo \"On your phone, open http://$(ipconfig getifaddr en0 || ipconfig getifaddr en1):8080\" && python3 -m http.server 8080 --directory public"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4"

@@ -46,6 +46,7 @@
   #editor #wipe { grid-column: span 2; width: auto; }
   #pen-black { --ink: #111; }
   #pen-white { --ink: #fff; }
+  .editor-tools img { width: 42px; height: 42px; object-fit: contain; }
 
   .title { font-size: 40px; font-weight: 500; }
 
@@ -80,10 +81,11 @@
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
     .editor-main { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
     #pixel-board-frame { flex: 0 0 auto; }
-    .editor-tools { grid-template-columns: repeat(2, 56px) 80px; gap: 8px; margin-left: 0; }
+    .editor-tools { grid-template-columns: repeat(4, 56px) 80px; gap: 8px; margin-left: 0; }
     #editor #wipe { grid-column: auto; width: 80px; }
     #editor .square-button { width: 56px; height: 56px; }
     #editor .pen { --m: 8px; }
+    .editor-tools img { width: 32px; height: 32px; }
   }
   @media (max-height: 600px) {
     #editor { --board: min(64vw, calc(100vh - 160px), 680px); }
@@ -99,7 +101,7 @@
     #pixel-board-frame { border-radius: 14px; }
     /* Just the board and Clear: a touch on a black pixel rubs out, anywhere else draws. */
     #editor { --board: min(calc(100vw - 32px), calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px), 680px); }
-    #editor .pen { display: none; }
+    #editor .pen, #brush-tool, #fill-tool { display: none; }
     .editor-tools { display: block; }
     #editor #wipe { width: auto; height: 48px; padding: 0 32px; margin-top: 16px; }
   }
@@ -118,6 +120,12 @@
     <div class="editor-tools" aria-label="Pixel editor tools">
       <button id="pen-black" class="square-button pen" type="button" aria-label="Black pixels" aria-pressed="true"></button>
       <button id="pen-white" class="square-button pen" type="button" aria-label="White pixels" aria-pressed="false"></button>
+      <button id="brush-tool" class="square-button" type="button" aria-label="Brush" aria-pressed="true">
+        <img src="resources/paint_brush.png" alt="">
+      </button>
+      <button id="fill-tool" class="square-button" type="button" aria-label="Fill area" aria-pressed="false">
+        <img src="resources/paint_bucket.svg" alt="">
+      </button>
       <button id="wipe" class="square-button" type="button">Wipe</button>
     </div>
   </div>
@@ -137,9 +145,9 @@
   <div id="card">
     <h1 class="title">First Contact</h1>
     <div id="choices">
-      <button id="startA">Describe my world</button>
-      <button id="startB">Guess their world</button>
-      <button id="startE">Contact from Earth</button>
+      <button id="startA">Be the alien</button>
+      <button id="startB">Be the listener</button>
+      <button id="startE">Be Earth</button>
     </div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>

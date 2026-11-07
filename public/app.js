@@ -1,7 +1,7 @@
-import { CATEGORIES, generateWorld } from "./worlds.js";
+import { CATEGORIES, EARTH, generateWorld } from "./worlds.js";
 import { renderBoard, renderEditorBoard, cleanGrid, emptyGrid, ink, W, H, SIZE } from "./board.js";
 import { WebcamPeer } from "./peer.js";
-import { Scene, WorldView } from "./scene.js";
+import { Scene, WorldView, EARTH_COLOURS } from "./scene.js";
 import { draw, interpret, report, openers, loadKey } from "./api.js";
 
 // One laptop describes its world (role "a"), the other only guesses (role "b").
@@ -13,10 +13,15 @@ const REPORT_MS = TOTAL_MS - 18000;          // the guesser stops guessing after
 const INK_MS = 3500;                         // the drawing appears over this long, board already up
 const HOLD_MS = 5000;                        // how long the finished board stays up
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
-const IDLE = ["hello? anyone?", "they're thinking.", "take your time.", "is this thing on?"];
+const PICTURES = 4;                          // the describer gets this many boards for the whole world
+const IDLE = ["Hello?", "They're thinking.", "Take your time.", "Is this thing on?"];
 let role = "a";
 const world = generateWorld();
 world.order = world.order.slice(0, N);
+// The facts shared out over the boards as evenly as possible: five facts on four boards means one board carries two.
+const pictures = Array.from({ length: Math.min(PICTURES, N) }, () => []);
+world.order.forEach((id, i) => pictures[i % pictures.length].push(id));
+const describeFacts = (ids) => ids.map((id) => `${CATEGORIES.find((c) => c.id === id).label}: ${world.values[id]}`).join(", ");
 
 const $ = (id) => document.getElementById(id);
 const elapsed = () => t0 ? ((performance.now() - t0) / 1000).toFixed(1) : "0.0";
@@ -26,8 +31,8 @@ const log = (m) => {
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
-// The ambassador writes in lowercase, with no dashes, semicolons or colons: those become commas or full stops.
-const plain = (m) => m.toLowerCase().replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim();
+// The ambassador writes with no dashes, semicolons or colons: those become commas or full stops.
+const plain = (m) => m.replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim();
 const say = (m) => scene?.say(m == null ? m : plain(m));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -115,31 +120,32 @@ function selectEditorTool(tool) {
   $("fill-tool").setAttribute("aria-pressed", String(tool === "fill"));
 }
 
-let sent = 0;            // describer: facts shown so far
+let sent = 0;            // describer: boards shown so far
 const guesses = {};      // guesser: category id -> reading, committed once the board came down
 let pending = null;      // guesser: reading of the board that is up right now; may still change
+const notes = [];        // guesser: what it concluded from each board, for the report home
+let boards = 0;          // guesser: boards seen so far
 let firstWords = [];     // guesser: lines for the moment a board comes up, fetched at the start
-const remaining = () => CATEGORIES.filter((c) => !(c.id in guesses));
-const drawings = {};     // describer: category id -> promise of the picture, requested up front
+const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
 let closing = false;
+let over = false;         // the encounter has ended: R goes back to the menu
 
 // Guesser: rebuild the imagined world from the facts understood so far, including the one
 // still being read, which may change its mind; the rest stays white.
 function showGuesses() {
   const known = {};
   for (const id in guesses) known[id] = guesses[id].value;
-  if (pending) known[pending.category] = pending.value;
+  if (pending) for (const r of pending.readings) known[r.category] = r.value;
   imagined.showWorld(known);
 }
 
 // Every picture is requested at the start, so drawing never waits on the model.
 function prefetch() {
-  for (const id of world.order) {
-    const category = CATEGORIES.find((c) => c.id === id);
-    drawings[id] = draw({ category, value: world.values[id], categories: CATEGORIES })
-      .catch((e) => { log(`error: ${e.message}`); return null; });
-  }
+  pictures.forEach((ids, k) => {
+    const facts = ids.map((id) => ({ category: CATEGORIES.find((c) => c.id === id), value: world.values[id] }));
+    drawings[k] = draw({ facts }).catch((e) => { log(`error: ${e.message}`); return null; });
+  });
 }
 
 // Wait for `pred`, sampling every 200 ms; give up after `ms` or when the clock runs out.
@@ -161,14 +167,13 @@ function rose() {
 
 // Describer: mutter, put the board up, then draw on it while they watch. It stays up until lower().
 async function show() {
-  const id = world.order[sent++];
-  const category = CATEGORIES.find((c) => c.id === id);
+  const k = sent++;
   scene.pose = "drawing";
   renderBoard(board, emptyGrid()); scene.boardChanged();
-  const out = await drawings[id];
+  const out = await drawings[k];
   if (!out) { scene.pose = "idle"; return null; }
   const grid = cleanGrid(out.rows);
-  log(`draw "${category.label}: ${world.values[id]}" — ${out.note} / "${out.thought}" / "${out.after}"`);
+  log(`draw "${describeFacts(pictures[k])}" — ${out.note} / "${out.thought}" / "${out.after}"`);
   say(out.thought);
   await sleep(1500);
   scene.pose = "raised";
@@ -187,7 +192,7 @@ function lower() {
 // Describer: one fact after another; the finished board stays up a while, then a word on the way down.
 async function describe() {
   await sleep(1500);
-  while (sent < N) {
+  while (sent < pictures.length) {
     const out = await show();
     if (!out) continue;
     await sleep(HOLD_MS);
@@ -195,6 +200,7 @@ async function describe() {
     say(out.after);
     await sleep(2500);
   }
+  over = true;
 }
 
 // True when the board has been out of view for two samples in a row.
@@ -206,30 +212,37 @@ async function lowered() {
 // Guesser: their board is up. Keep reading it as the drawing grows, thinking aloud and changing
 // the imagined world as the reading changes; commit whatever was last understood when it comes down.
 async function readBoard() {
+  document.body.classList.add("spotted");
+  boards++;
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
   await sleep(500); // let their board settle in frame
   let reading = null;
   while (!closing && !(await lowered())) {
     try {
-      const out = await interpret({ image: peer.capture(), remaining: remaining(), previous: reading });
-      const c = CATEGORIES.find((c) => c.id === out.category);
-      const changed = !reading || reading.category !== out.category || reading.value !== out.value;
-      log(`see: ${out.seen} → ${c.label} = ${out.value}${changed ? "" : " (unchanged)"} (${out.reasoning}) / "${out.thought}"`);
+      const out = await interpret({ image: peer.capture(), categories: CATEGORIES, believed: guesses, previous: reading });
+      const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
+      const changed = !reading || key(reading) !== key(out);
+      log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} (${out.reasoning}) / "${out.thought}"`);
       reading = pending = out;
       if (changed) showGuesses();
       say(out.thought);
     } catch (e) { log(`error: ${e.message}`); }
     await sleep(PAUSE_MS);
   }
+  document.body.classList.remove("spotted");
   pending = null;
-  if (reading) { guesses[reading.category] = reading; log(`lock: ${reading.category} = ${reading.value}`); }
+  if (reading) {
+    for (const r of reading.readings) guesses[r.category] = r;
+    notes.push(reading.thought);
+    log(`lock: ${reading.readings.map((r) => `${r.category} = ${r.value}`).join(", ") || "nothing"}`);
+  }
   showGuesses();
 }
 
-// Guesser: every time their board comes up, read it until it goes down; stop when every fact is in or the clock runs out.
+// Guesser: every time their board comes up, read it until it goes down; stop after the last board or when the clock runs out.
 async function guess() {
   say(pick(IDLE));
-  while (!closing && remaining().length) {
+  while (!closing && boards < pictures.length) {
     if (await waitFor(rose, TOTAL_MS)) await readBoard();
   }
   await finish();
@@ -239,9 +252,9 @@ async function finish() {
   closing = true;
   await sleep(2000);
   say("…");
-  const theirs = CATEGORIES.filter((c) => guesses[c.id]).map((c) => ({ label: c.label, value: guesses[c.id].value }));
-  try { const out = await report({ theirs }); say(out.report); log(`report: ${out.report}`); }
+  try { const out = await report({ notes }); say(out.report); log(`report: ${out.report}`); }
   catch (e) { log(`error: ${e.message}`); }
+  over = true;
 }
 
 // The app opens as a small start window; grow it to game size once a role is picked.
@@ -255,10 +268,42 @@ async function growWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
-async function openEditor() {
+// Back to the menu: shrink to the start window and begin afresh.
+async function menu() {
+  const t = window.__TAURI__;
+  try {
+    const win = t?.window.getCurrentWindow();
+    await win?.setSize(new t.dpi.LogicalSize(520, 340));
+    await win?.center();
+  } catch (e) { log(`error: resize failed: ${e.message || e}`); }
+  location.reload();
+}
+
+// Wipe (or Enter): the board goes down (so the guesser settles on what it saw), is wiped, and comes back up clean.
+let wiping = false;
+async function wipe() {
+  if (wiping) return;
+  wiping = true;
+  log(`wipe: ${editorGrid.join("/")}`);
+  document.body.classList.add("down");
+  await sleep(1500);
+  editorGrid.splice(0, editorGrid.length, ...emptyGrid());
+  renderEditorBoard(editorCanvas, editorGrid);
+  document.body.classList.remove("down");
+  await sleep(400);
+  wiping = false;
+}
+
+// Contact from Earth: Earth behind, the board held up in front, and people draw on it themselves.
+async function earth() {
+  role = "earth";
+  t0 = performance.now();
+  over = true; // nothing to finish: R goes back whenever
   await growWindow();
   $("start").classList.add("hide");
-  document.body.classList.add("editor");
+  document.activeElement?.blur(); // keys belong to the game now, not the menu button
+  document.body.classList.add("earth");
+  new WorldView($("stage"), { palette: EARTH_COLOURS }).showWorld(EARTH);
 }
 
 async function start(r) {
@@ -266,6 +311,7 @@ async function start(r) {
   t0 = performance.now();
   await growWindow();
   $("start").classList.add("hide");
+  document.activeElement?.blur(); // keys belong to the game now, not the menu button
   document.body.classList.add(describer() ? "describe" : "guess");
   document.body.style.setProperty("--bg1", `hsla(${world.hue * 360}, 80%, 80%, .25)`);
   document.body.style.setProperty("--bg2", `hsla(${(world.hue * 360 + 60) % 360}, 80%, 80%, .25)`);
@@ -273,8 +319,8 @@ async function start(r) {
   scene.showWorld(world.values);
   if (describer()) { prefetch(); describe(); return; }
   imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
-  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.01);
-  openers({ n: N + 1 }).then((l) => { firstWords = l; }).catch((e) => log(`error: ${e.message}`));
+  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.008);
+  openers({ n: pictures.length + 1 }).then((l) => { firstWords = l; }).catch((e) => log(`error: ${e.message}`));
   await peer.start();
   setTimeout(() => { closing = true; }, REPORT_MS);
   guess();
@@ -285,19 +331,22 @@ console.error = (...a) => { origErr(...a); log("console.error: " + a.map(String)
 addEventListener("error", (e) => log(`error: ${e.message} (${e.filename}:${e.lineno})`));
 addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message || e.reason} ${e.reason?.stack || ""}`));
 
+addEventListener("keydown", (e) => {
+  if (!t0) return; // still on the menu
+  if (e.code === "KeyR" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (over) menu(); } // leave Cmd/Ctrl+R to reload
+  if (e.key === "Enter" && role === "earth") { e.preventDefault(); wipe(); }
+});
+
 (async () => {
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
-  if (!key) $("nokey").style.display = "block";
+  if (!key) $("roles").style.display = "none"; // without a key only Contact from Earth works
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
-  $("startC").onclick = openEditor;
+  $("startE").onclick = () => earth();
   $("pen-black").onclick = () => selectPen("#");
   $("pen-white").onclick = () => selectPen(".");
   $("brush-tool").onclick = () => selectEditorTool("pen");
   $("fill-tool").onclick = () => selectEditorTool("fill");
-  $("clear-board").onclick = () => {
-    editorGrid.splice(0, editorGrid.length, ...emptyGrid());
-    renderEditorBoard(editorCanvas, editorGrid);
-  };
+  $("wipe").onclick = () => wipe();
 })();

@@ -19,17 +19,19 @@ const PALETTES = [
   { sky: 0xdde8ee, ground: 0xb9c6b4, leaf: 0x5c7f8e, rock: 0x7c8891 },
   { sky: 0xd2ecef, ground: 0xa6cf8f, leaf: 0xe0a04f, rock: 0x6c7f8f },
 ];
+// Earth's own colours: blue sky, green grass and trees, grey stone.
+export const EARTH_COLOURS = { sky: 0x9fd0f2, ground: 0x6fae4f, leaf: 0x2f7d3a, rock: 0x8a8f96 };
 const TRUNK = 0x7a5a3e;
 
-// Which way things are pulled, and how hard.
-const GRAVITY = { down: [0, -9, 0], up: [0, 3, 0], sideways: [5, 0, 0], "not at all": [0, 0, 0] };
+const DOWN = [0, -9, 0]; // gravity, for falling rocks
 const gust = (t) => 0.5 + 0.5 * Math.sin(t * 0.8) * Math.sin(t * 0.31 + 1);
 
 const shade = (m) => { m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
 
 // A world built from facts, viewed from a fixed camera.
 export class WorldView {
-  constructor(container, { camera = [0, 2.4, 7.6], lookAt = [0, 2.0, 0], fov = 38 } = {}) {
+  constructor(container, { camera = [0, 2.4, 7.6], lookAt = [0, 2.0, 0], fov = 38, palette = null } = {}) {
+    this.palette = palette; // null: a random calm palette
     this.t = 0;
     this.movers = [];
     this.container = container;
@@ -107,7 +109,7 @@ export class WorldView {
     return step;
   }
 
-  // Rebuild the backdrop from facts {suns, gravity, inhabitants, ground, weather}. An unknown fact leaves its
+  // Rebuild the backdrop from facts {suns, wind, animals, terrain, weather}. An unknown fact leaves its
   // part of the world white: no facts at all is a blank white void, and each fact paints its own piece in.
   // Palette, tree shapes, moons and rings are random (per view), so no two worlds look the same.
   showWorld(v) {
@@ -117,16 +119,16 @@ export class WorldView {
     const known = (k) => v[k] != null;
     const reseed = (k) => { rng = seeded(this.seed + k); }; // each section draws from its own stream
     reseed(0);
-    const P = pick(PALETTES);
-    const g = GRAVITY[v.gravity] ?? GRAVITY.down;
-    const free = v.gravity === "not at all";
-    const lean = v.gravity === "sideways" ? -0.35 : v.weather === "wind" ? -0.12 : 0;
+    const P = this.palette ?? pick(PALETTES);
+    // How hard the wind blows: trees bend by `bend` plus a gusting `sway`; streaks fly past at `speed`.
+    const W = { "a breeze": { bend: 0.04, sway: 0.08, streaks: 6, speed: 4 }, "a gale": { bend: 0.22, sway: 0.3, streaks: 40, speed: 16 } }[v.wind];
 
     let sky = new THREE.Color(known("suns") ? P.sky : 0xffffff);
     if (v.suns === "no sun") sky = new THREE.Color(0x2f2b55);
     if (v.suns === "two suns") sky.lerp(new THREE.Color(0xf3d2a0), 0.4);
     if (v.suns === "three suns") sky.lerp(new THREE.Color(0xff9a5c), 0.65);
     if (v.weather === "snow") sky.lerp(new THREE.Color(0xdfe4ea), 0.6);
+    if (v.weather === "rain") sky.lerp(new THREE.Color(0x8e98a6), 0.3);
     this.scene.background = sky;
     this.scene.fog.color = sky;
     this.hemi.color = sky.clone().lerp(new THREE.Color(0xffffff), 0.5);
@@ -136,13 +138,13 @@ export class WorldView {
 
     // Ground: gently uneven unless flat, water or pitted (or not yet known); always level near the camera.
     reseed(1);
-    const amp = !known("ground") || ["flat", "water", "holes"].includes(v.ground) ? 0 : 0.35;
+    const amp = v.terrain === "mountains" ? 0.35 : 0;
     this.groundY = (x, z) => {
       if (!amp) return 0;
       const k = Math.min(1, Math.max(0, (Math.hypot(x, z) - 2) / 4));
       return amp * k * (Math.sin(x * 0.45 + 1.3) * Math.cos(z * 0.38) + 0.6 * Math.sin(x * 0.9 - z * 0.7));
     };
-    const groundColour = new THREE.Color(!known("ground") ? 0xffffff : v.ground === "water" ? 0x6fb7d9 : P.ground);
+    const groundColour = new THREE.Color(!known("terrain") ? 0xffffff : v.terrain === "water" ? 0x6fb7d9 : P.ground);
     if (v.weather === "snow") groundColour.lerp(new THREE.Color(0xffffff), 0.75);
     if (v.suns === "three suns") groundColour.lerp(new THREE.Color(0xd98a4a), 0.5); // scorched
     if (v.suns === "no sun") groundColour.multiplyScalar(0.6);
@@ -154,13 +156,13 @@ export class WorldView {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
 
-    if (v.ground === "mountains") for (let i = 0; i < 16; i++) {
+    if (v.terrain === "mountains") for (let i = 0; i < 16; i++) {
       const hgt = rand(7, 17), x = -26 + i * 3.5 + rand(-1, 1), z = rand(-26, -16);
       const m = add(new THREE.Mesh(new THREE.ConeGeometry(rand(3, 6), hgt, (rand(5, 8) | 0)), flat(new THREE.Color(i % 2 ? P.rock : P.leaf).lerp(sky, 0.35))));
       m.position.set(x, hgt / 2 - 0.5, z);
       m.rotation.y = rand(0, 6);
     }
-    if (v.ground === "holes") {
+    if (v.terrain === "holes") {
       const rim = flat(new THREE.Color(P.ground).multiplyScalar(0.8)), pit = flat(0x2a2540);
       for (let i = 0; i < 30; i++) {
         const r = rand(0.5, 1.4), x = rand(-13, 13), z = rand(-13, -1);
@@ -170,19 +172,7 @@ export class WorldView {
         ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.02, z);
       }
     }
-    if (v.ground === "crystals") {
-      const crystal = new THREE.MeshStandardMaterial({ color: P.rock, flatShading: true, emissive: new THREE.Color(P.rock).multiplyScalar(0.3) });
-      for (let k = 0; k < 7; k++) {
-        const cx = rand(-13, 13), cz = rand(-13, -2);
-        for (let i = rand(2, 5) | 0; i--;) {
-          const hgt = rand(1, 4.5), x = cx + rand(-1.2, 1.2), z = cz + rand(-1.2, 1.2);
-          const c = add(new THREE.Mesh(new THREE.ConeGeometry(rand(0.2, 0.6), hgt, 5), crystal));
-          c.position.set(x, this.groundY(x, z) + hgt / 2 - 0.2, z);
-          c.rotation.set(rand(-0.25, 0.25), rand(0, 6), rand(-0.3, 0.3));
-        }
-      }
-    }
-    if (v.ground === "water") for (let i = 0; i < 20; i++) {
+    if (v.terrain === "water") for (let i = 0; i < 20; i++) {
       const r = add(new THREE.Mesh(new THREE.TorusGeometry(rand(0.4, 1.2), 0.03, 4, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })), false);
       r.rotation.x = -Math.PI / 2;
       const x = rand(-14, 14), z = rand(-14, -1), p = rand(0, 6);
@@ -208,9 +198,9 @@ export class WorldView {
       new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),
       new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, fog: false })), false);
 
-    // Trees in clumps, of one random shape, once the ground is known. They bend in wind, lean with sideways gravity, and float with none.
+    // Trees in clumps, of one random shape, once the terrain is known. They bend in the wind.
     reseed(3);
-    if (known("ground") && v.ground !== "water") {
+    if (known("terrain") && v.terrain !== "water") {
       const leaf = flat(P.leaf), trunk = flat(TRUNK);
       const kind = (rng() * 3) | 0;
       for (let k = 0; k < 5; k++) {
@@ -226,81 +216,239 @@ export class WorldView {
           tree.add(stem, top);
           const x = cx + rand(-2.5, 2.5), z = cz + rand(-2, 2);
           tree.position.set(x, this.groundY(x, z) - 0.05, z);
-          tree.rotation.z = lean + rand(-0.06, 0.06);
+          tree.rotation.z = rand(-0.06, 0.06);
           add(tree);
           const p = rand(0, 6);
-          if (v.weather === "wind") this.movers.push((t) => { tree.rotation.z = -(0.12 + gust(t) * 0.22) + Math.sin(t * 2.2 + p) * 0.03; });
-          else if (free) { tree.position.y += rand(0.4, 1.6); tree.rotation.set(rand(-0.3, 0.3), 0, rand(-0.4, 0.4)); this.movers.push(() => { tree.rotation.y += DT * 0.15; }); }
+          if (W) this.movers.push((t) => { tree.rotation.z = -(W.bend + gust(t) * W.sway) + Math.sin(t * 2.2 + p) * 0.03; });
         }
       }
     }
 
-    // Boulders arrive with gravity, since they are what shows it: they rest, lift off, roll, or tumble.
-    reseed(4);
-    if (known("gravity") && v.ground !== "water") for (let i = 0; i < 8; i++) {
-      const r = rand(0.25, 0.7);
-      const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(P.rock)));
-      m.rotation.set(rand(0, 6), rand(0, 6), 0);
-      this.movers.push(this.rock(m, r, g, (p, vel) => {
-        if (v.gravity === "sideways") p.set(-16, 0, rand(-13, -2)); else p.set(rand(-13, 13), 0, rand(-14, -2));
-        p.y = free ? rand(0.5, 8) : this.groundY(p.x, p.z) + r * 0.8;
-        vel.set(0, 0, 0);
-      }));
-    }
-
-    // Inhabitants: little creatures that hop (with a proper squash and stretch) or drift when weightless.
-    // One set of geometries and materials for every being: a crowd of hundreds is then cheap to build and upload.
-    const skinMat = flat(P.rock), darkMat = flat(0x3a3560);
-    const torsoGeo = new THREE.BoxGeometry(0.6, 0.8, 0.4), headGeo = new THREE.IcosahedronGeometry(0.3, 0), legGeo = new THREE.BoxGeometry(0.16, 0.25, 0.3);
-    const being = (size, x, z) => {
-      const body = new THREE.Group();
-      const torso = new THREE.Mesh(torsoGeo, skinMat);
-      torso.position.y = 0.6;
-      const head = new THREE.Mesh(headGeo, skinMat);
-      head.position.y = 1.25;
-      body.add(torso, head);
-      for (const sx of [-0.15, 0.15]) {
-        const leg = new THREE.Mesh(legGeo, darkMat);
-        leg.position.set(sx, 0.12, 0.03);
-        body.add(leg);
-      }
-      body.scale.setScalar(size);
-      body.rotation.y = rand(-0.7, 0.7);
-      body.rotation.z = lean;
-      const T = 1.4 + size * 0.4, hop = 0.35 * size, p = rand(0, 6);
-      if (free) {
-        this.movers.push(this.rock(body, size, g, (pos, vel) => { pos.set(x, rand(0.5, 7), z); vel.set(0, 0, 0); }));
-      } else this.movers.push((t) => {
-        const u = ((t + p) % T) / T;
-        let y = 0, sy = 1;
-        if (u < 0.35) { const a = u / 0.35; y = 4 * hop * a * (1 - a); sy = 1 + 0.1 * Math.sin(a * Math.PI); }
-        else { const b = (u - 0.35) / 0.65; sy = 1 - 0.1 * Math.sin(b * Math.PI) ** 4; }
-        body.position.y = this.groundY(body.position.x, body.position.z) + y;
-        body.scale.set(size / Math.sqrt(sy), size * sy, size / Math.sqrt(sy));
-      });
-      return body;
-    };
-    const place = (size, x, z) => { const b = being(size, x, z); b.position.set(x, 0, z); add(b); };
+    // Animals, and how each copes with the terrain and the wind. On water: cows swim up to their bellies, snails
+    // float shell-up, fish leap, octopuses peek out. On land: fish flop about gasping, and octopuses wear fishbowls.
+    // In a gale the birds flap flat out and still get blown backwards.
     reseed(5);
-    if (v.inhabitants === "one giant") place(7, 3, -12); // towers over the trees, head nearly out of frame
-    if (v.inhabitants === "a few big ones") for (let i = 0; i < 3; i++) place(2.2, -8 + i * 7, -9 - i);
-    if (v.inhabitants === "countless tiny ones") for (let k = 0; k < 10; k++) {
-      const cx = rand(-13, 13), cz = rand(-14, -2);
-      for (let i = 0; i < 25; i++) place(0.35, cx + rand(-2.5, 2.5), cz + rand(-2, 2));
+    const dark = flat(0x3a3560), white = flat(0xffffff);
+    const water = v.terrain === "water";
+    const googly = (r, x, y, z) => { // a white eye with a pupil, looking along +z
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), white);
+      eye.position.set(x, y, z);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 5, 4), dark);
+      pupil.position.z = r * 0.7;
+      eye.add(pupil);
+      return eye;
+    };
+    if (v.animals === "cows") {
+      const hide = flat(0xf4f1ea), nose = flat(0xe9a6a6);
+      for (let i = 0; i < 6; i++) {
+        const cow = new THREE.Group(), head = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.75, 0.7), hide);
+        body.position.y = 0.85;
+        cow.add(body);
+        for (const [sx, sz] of [[-0.5, -0.22], [0.5, -0.22], [-0.5, 0.22], [0.5, 0.22]]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), dark);
+          leg.position.set(sx, 0.25, sz);
+          cow.add(leg);
+        }
+        for (let k = 0; k < 3; k++) {
+          const spot = new THREE.Mesh(new THREE.BoxGeometry(rand(0.25, 0.45), rand(0.2, 0.35), 0.72), dark);
+          spot.position.set(rand(-0.45, 0.45), rand(0.75, 1.0), 0);
+          cow.add(spot);
+        }
+        const skull = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.42, 0.42), hide);
+        skull.position.x = 0.25;
+        const snout = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.24, 0.36), nose);
+        snout.position.set(0.52, -0.08, 0);
+        head.add(skull, snout);
+        for (const sz of [-0.15, 0.15]) {
+          const horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.2, 4), dark);
+          horn.position.set(0.2, 0.28, sz);
+          head.add(horn);
+        }
+        head.position.set(0.6, 1.1, 0);
+        cow.add(head);
+        const x0 = rand(-12, 12), z = rand(-13, -3), p = rand(0, 6);
+        cow.position.set(x0, this.groundY(x0, z), z);
+        cow.rotation.y = rand(0, 6);
+        add(cow);
+        if (water) this.movers.push((t) => { // swimming: in up to the belly, chin up, drifting
+          cow.position.set(x0 + Math.sin(t * 0.2 + p) * 1.5, -0.6 + Math.sin(t * 1.5 + p) * 0.06, z);
+          head.rotation.z = 0.25;
+        });
+        else this.movers.push((t) => { head.rotation.z = -0.7 * Math.max(0, Math.sin(t * 0.5 + p)); }); // head down to graze, now and then
+      }
+    }
+    if (v.animals === "birds") {
+      const bodyGeo = new THREE.ConeGeometry(0.12, 0.6, 5), wingGeo = new THREE.BoxGeometry(0.5, 0.03, 0.25);
+      const gale = v.wind === "a gale";
+      for (let k = 0; k < 2; k++) {
+        const cx = rand(-5, 5), cy = rand(4.5, 6.5), cz = rand(-14, -8);
+        for (let i = 0; i < 7; i++) {
+          const bird = new THREE.Group(), body = new THREE.Mesh(bodyGeo, dark);
+          body.rotation.x = Math.PI / 2; // beak forward, along +z
+          bird.add(body);
+          const wings = [-1, 1].map((sx) => {
+            const pivot = new THREE.Group(), wing = new THREE.Mesh(wingGeo, dark);
+            wing.position.x = sx * 0.25;
+            pivot.add(wing);
+            bird.add(pivot);
+            return pivot;
+          });
+          bird.scale.setScalar(1.5);
+          add(bird);
+          const R = rand(2, 4), w = rand(0.4, 0.7) * (k ? -1 : 1), p = rand(0, 6), dy = rand(-1, 1);
+          this.movers.push((t) => {
+            const a = t * w + p, f = Math.sin(t * (gale ? 22 : 12) + p) * 0.6;
+            if (gale) { // facing into the wind, going backwards
+              const x = ((cx + R * Math.cos(a) * 0.4 + t * 2.5 + 20) % 40 + 40) % 40 - 20;
+              bird.position.set(x, cy + dy + Math.sin(t * 3 + p) * 0.4, cz + R * Math.sin(a) * 0.3);
+              bird.rotation.set(Math.sin(t * 4 + p) * 0.2, -Math.PI / 2, Math.sin(t * 5 + p) * 0.3);
+            } else {
+              bird.position.set(cx + R * Math.cos(a), cy + dy + Math.sin(t * 1.3 + p) * 0.3, cz + R * Math.sin(a) * 0.6);
+              bird.rotation.y = -a + (w < 0 ? Math.PI : 0);
+            }
+            wings[0].rotation.z = -f; wings[1].rotation.z = f;
+          });
+        }
+      }
+    }
+    if (v.animals === "fish") {
+      const scales = flat(0xf08a3c), bodyGeo = new THREE.SphereGeometry(0.3, 7, 5), tailGeo = new THREE.ConeGeometry(0.2, 0.3, 4), mouthGeo = new THREE.SphereGeometry(0.08, 5, 4);
+      for (let i = 0; i < 10; i++) {
+        const fish = new THREE.Group(), body = new THREE.Mesh(bodyGeo, scales), tail = new THREE.Mesh(tailGeo, scales), mouth = new THREE.Mesh(mouthGeo, dark);
+        body.scale.set(1.6, 1, 0.6);
+        tail.rotation.z = -Math.PI / 2;
+        tail.position.x = -0.6;
+        mouth.position.x = 0.47;
+        fish.add(body, tail, mouth);
+        for (const sz of [-1, 1]) { const eye = googly(0.08, 0.25, 0.08, sz * 0.15); eye.rotation.y = sz > 0 ? 0 : Math.PI; fish.add(eye); }
+        fish.scale.setScalar(1.3);
+        fish.rotation.order = "YXZ"; // yaw, then roll about its own length, then pitch
+        add(fish);
+        const x0 = rand(-12, 12), z = rand(-12, -2), y0 = this.groundY(x0, z), T = rand(2.5, 4), p = rand(0, 10), h = rand(1.2, 2.5);
+        if (water) this.movers.push((t) => {
+          // Leap back and forth between two spots, waiting under water in between.
+          const n = Math.floor((t + p) / T), u = (t + p) / T - n, d = n % 2 ? -1 : 1, a = Math.min(1, u / 0.45);
+          fish.position.set(x0 + d * (2 * a - 1), u < 0.45 ? 4 * h * a * (1 - a) : -0.6, z);
+          fish.rotation.set(0, d > 0 ? 0 : Math.PI, Math.atan(2 * h * (1 - 2 * a)));
+        });
+        else this.movers.push((t) => {
+          // Out of water: lying on its side, gasping, and every so often a hopeless flip onto the other side.
+          const F = 1.4, n = Math.floor((t + p) / F), u = (t + p) / F - n, flip = Math.min(1, u / 0.3);
+          fish.position.set(x0, y0 + 0.25 + (u < 0.3 ? Math.sin(flip * Math.PI) * 0.6 : 0), z);
+          fish.rotation.set(Math.PI / 2 + Math.PI * (n + flip), Math.sin(n * 12.9898 + p) * 1.2, 0);
+          mouth.scale.y = 0.4 + Math.abs(Math.sin(t * 6 + p)) * 1.4;
+        });
+      }
+    }
+    if (v.animals === "snails") {
+      const shellMat = flat(0xd9a05b), skin = flat(0xc9cf8a);
+      for (let i = 0; i < 4; i++) {
+        const snail = new THREE.Group(), stalks = [];
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.3, 0.55), skin);
+        foot.position.y = 0.15;
+        const shell = new THREE.Mesh(new THREE.SphereGeometry(0.75, 9, 7), shellMat);
+        shell.position.set(-0.2, 0.85, 0);
+        shell.scale.z = 0.7;
+        snail.add(foot, shell);
+        for (const sz of [-1, 1]) { // a spiral on each side of the shell
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.06, 4, 12), dark);
+          ring.position.set(-0.2, 0.85, sz * 0.48);
+          snail.add(ring);
+        }
+        for (const sz of [-0.12, 0.12]) {
+          const stalk = new THREE.Group();
+          const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.6, 5), skin);
+          rod.position.y = 0.3;
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), dark);
+          eye.position.y = 0.62;
+          stalk.add(rod, eye);
+          stalk.position.set(0.8, 0.3, sz);
+          stalk.rotation.x = sz * 2;
+          snail.add(stalk);
+          stalks.push(stalk);
+        }
+        snail.scale.setScalar(1.4);
+        const x0 = rand(-11, 11), z = rand(-12, -3), p = rand(0, 6), d = rng() < 0.5 ? 1 : -1;
+        snail.rotation.y = d > 0 ? 0 : Math.PI;
+        add(snail);
+        this.movers.push((t) => {
+          const x = x0 + d * (((t * 0.15 + p) % 6) - 3); // a long, slow crawl, or a long, slow drift
+          snail.position.set(x, water ? -0.35 + Math.sin(t * 1.4 + p) * 0.08 : this.groundY(x, z), z);
+          snail.rotation.z = water ? Math.sin(t * 1.1 + p) * 0.12 : 0;
+          stalks.forEach((s, k) => { s.rotation.z = -0.25 + Math.sin(t * 1.5 + p + k * 2) * 0.2; });
+        });
+      }
+    }
+    if (v.animals === "octopuses") {
+      const skin = flat(0xb565a7), armGeo = new THREE.CylinderGeometry(0.07, 0.12, 0.9, 5);
+      const glass = new THREE.MeshStandardMaterial({ color: 0xd8f2ff, transparent: true, opacity: 0.3, depthWrite: false });
+      const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }), bubbleGeo = new THREE.SphereGeometry(0.06, 5, 4);
+      for (let i = 0; i < 5; i++) {
+        const octo = new THREE.Group(), arms = [], bubbles = [];
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 9, 7), skin);
+        head.scale.y = 1.25;
+        head.position.y = 1.3;
+        octo.add(head, googly(0.14, -0.2, 1.25, 0.48), googly(0.14, 0.2, 1.25, 0.48));
+        for (let k = 0; k < 8; k++) { // arms splay outwards all round, each in its own plane
+          const a = k / 8 * Math.PI * 2, pivot = new THREE.Group(), arm = new THREE.Mesh(armGeo, skin);
+          arm.position.y = -0.45;
+          pivot.add(arm);
+          pivot.position.set(Math.cos(a) * 0.3, 0.85, Math.sin(a) * 0.3);
+          pivot.rotation.y = -a;
+          octo.add(pivot);
+          arms.push(pivot);
+        }
+        if (!water) { // on land it wears a fishbowl, with bubbles going up
+          const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.95, 14, 10), glass);
+          bowl.position.y = 1.35;
+          octo.add(bowl);
+          for (let k = 0; k < 3; k++) { const b = new THREE.Mesh(bubbleGeo, bubbleMat); octo.add(b); bubbles.push(b); }
+        }
+        octo.scale.setScalar(1.2);
+        const x0 = rand(-11, 11), z = rand(-12, -3), p = rand(0, 6);
+        octo.rotation.y = rand(-0.5, 0.5);
+        add(octo);
+        octo.traverse((o) => { if (o.material === glass || o.material === bubbleMat) o.castShadow = false; }); // glass casts no shadow
+        if (water) this.movers.push((t) => { // just the top of its head and its eyes above the surface, now and then ducking under
+          octo.position.set(x0 + Math.sin(t * 0.3 + p) * 2, -1.3 + Math.sin(t * 0.9 + p) * 0.3, z);
+        });
+        else this.movers.push((t) => { // a wobbly, unsteady walk, arms flailing
+          const x = x0 + Math.sin(t * 0.3 + p) * 2;
+          octo.position.set(x, this.groundY(x, z) + Math.abs(Math.sin(t * 2 + p)) * 0.15, z);
+          octo.rotation.z = Math.sin(t * 2 + p) * 0.12;
+          arms.forEach((arm, k) => { arm.rotation.z = 0.6 + Math.sin(t * 6 + k * 1.7 + p) * 0.4; });
+          bubbles.forEach((b, k) => { const u = (t * 0.5 + k / 3 + p) % 1; b.position.set(Math.sin(u * 9 + k) * 0.2, 1.0 + u * 0.9, 0.7); });
+        });
+      }
     }
 
-    // Weather
+    // Wind: streaks blowing past.
     reseed(6);
-    if (v.weather === "wind") for (let i = 0; i < 14; i++) {
+    if (W) for (let i = 0; i < W.streaks; i++) {
       const s = add(new THREE.Mesh(new THREE.BoxGeometry(rand(2, 4), 0.03, 0.03), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })), false);
       const y = rand(0.5, 7), z = rand(-12, 1);
       let x = rand(-20, 20);
-      this.movers.push((t) => { x += (7 + gust(t) * 7) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
+      this.movers.push((t) => { x += W.speed * (1 + gust(t)) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
+    }
+
+    // Weather
+    reseed(7);
+    if (v.weather === "rain") {
+      const count = 500, pos = new Float32Array(count * 6);
+      for (let i = 0; i < count; i++) { const x = rand(-18, 18), y = rand(0, 14), z = rand(-18, 4); pos.set([x, y, z, x, y + 0.4, z], i * 6); }
+      const rain = add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3)),
+        new THREE.LineBasicMaterial({ color: 0x5f7390, transparent: true, opacity: 0.6 })), false);
+      this.movers.push(() => {
+        const a = rain.geometry.attributes.position.array;
+        for (let i = 0; i < count; i++) { const y = (a[i * 6 + 1] - 0.22 + 14) % 14; a[i * 6 + 1] = y; a[i * 6 + 4] = y + 0.4; }
+        rain.geometry.attributes.position.needsUpdate = true;
+      });
     }
     if (v.weather === "rocks") for (let i = 0; i < 24; i++) {
       const r = rand(0.4, 1.1);
       const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(0x8c8498)));
-      this.movers.push(this.rock(m, r, GRAVITY.down, (p, vel) => { p.set(rand(-12, 12), rand(12, 18), rand(-12, -2)); vel.set(rand(-0.5, 0.5), 0, 0); }, { respawnWhenResting: true }));
+      this.movers.push(this.rock(m, r, DOWN, (p, vel) => { p.set(rand(-12, 12), rand(12, 18), rand(-12, -2)); vel.set(rand(-0.5, 0.5), 0, 0); }, { respawnWhenResting: true }));
     }
     if (v.weather === "snow") {
       const count = 600, pos = new Float32Array(count * 3);

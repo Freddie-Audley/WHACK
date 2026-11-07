@@ -12,35 +12,29 @@
   body.describe #stage, body.guess #stage { display: block; }
   #stage { left: 14px; right: 14px; }
   #stage canvas, #imagined canvas { display: block; }
+  .bubble { position: absolute; max-width: min(60%, 520px); padding: 12px 16px; border-radius: 18px; background: rgba(255,255,255,.92); color: #1d1d3a; font-size: 26px; line-height: 1.25; white-space: pre-wrap; pointer-events: none; transition: opacity .3s; }
+  .bubble::after { content: ""; position: absolute; top: 100%; left: calc(var(--tx, 50%) - 6px); border: 0 solid transparent; border-width: 16px 18px 0 6px; border-top-color: rgba(255,255,255,.92); }
+  body.raised .bubble { opacity: 0; }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
   body.guess #stage { right: calc(50% + 7px); }
   #imagined { left: calc(50% + 7px); right: 14px; }
   body.guess #imagined { display: block; }
 
-  #speech, #imagine, #cam { transition: opacity .4s; }
-  body.raised #speech, body.raised #imagine, body.raised #cam { opacity: 0; pointer-events: none; }
+  #imagine, #cam { transition: opacity .4s; }
+  body.raised #imagine, body.raised #cam { opacity: 0; pointer-events: none; }
   .glass { background: rgba(255,255,255,.55); -webkit-backdrop-filter: blur(30px) saturate(170%); backdrop-filter: blur(30px) saturate(170%); border-radius: 10px; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   .title { font-size: 32px; font-weight: 500; }
-  .eyebrow { color: #1d1d3a; margin-bottom: 4px; }
 
-  /* Speech bubble, anchored above the ambassador's head by app.js */
-  #speech { position: fixed; left: 0; top: 0; max-width: 420px; padding: 14px 16px; transform: translate(-50%, -100%); display: none; }
-  #speech.show { display: block; }
-  #speech::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 16px; height: 16px; margin-left: -8px; background: inherit; -webkit-backdrop-filter: inherit; backdrop-filter: inherit; transform: rotate(45deg); border-radius: 3px; box-shadow: 2px 2px 3px rgba(40,30,80,.06); }
-
-  #imagine { position: fixed; right: 28px; top: 54px; width: 600px; padding: 14px; display: none; flex-direction: column; gap: 10px; }
+  #imagine { position: fixed; right: 28px; top: 54px; max-width: 320px; padding: 12px 16px; display: none; flex-direction: column; gap: 6px; }
   body.describe #imagine, body.guess #imagine { display: flex; }
-  body.guess #imagine { right: auto; left: calc(50% + 21px); width: calc(50% - 49px); }
-  #tiles { display: flex; flex-direction: column; gap: 10px; }
-  .prop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .prop .label { color: #1d1d3a; margin-right: 4px; }
-  .chips { display: contents; }
-  .chip { padding: 5px 11px; border-radius: 999px; background: rgba(255,255,255,.35); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); color: #55546f; }
-  .chip.on { background: AccentColor; color: AccentColorText; box-shadow: 0 1px 4px rgba(40,30,80,.15), inset 0 1px 0 rgba(255,255,255,.35); }
-  .prop.fresh .chip.on { animation: pop .35s ease; }
-  @keyframes pop { from { transform: scale(.94); } to { transform: scale(1); } }
+  body.guess #imagine { right: auto; left: calc(50% + 21px); }
+  #imtitle { color: #55546f; }
+  #facts { display: flex; flex-direction: column; gap: 4px; }
+  #facts:empty { display: none; }
+  .fact.fresh { animation: pop .35s ease; }
+  @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-  #cam { position: fixed; left: 28px; top: 54px; width: 360px; padding: 10px; display: none; }
+  #cam { position: fixed; left: 28px; bottom: 28px; width: 220px; padding: 8px; display: none; }
   body.guess #cam { display: block; }
   #cam video { width: 100%; display: block; border-radius: 6px; transform: scaleX(-1); }
   #preview { display: none; }
@@ -61,11 +55,9 @@
 <div id="stage" class="surface"></div>
 <div id="imagined" class="surface"></div>
 
-<div id="speech" class="glass"></div>
-
 <div id="imagine" class="glass">
-  <div class="eyebrow title" id="imtitle">What I'm imagining</div>
-  <div id="tiles"></div>
+  <div id="imtitle">What I'm imagining</div>
+  <div id="facts"></div>
 </div>
 
 <div id="cam" class="glass">

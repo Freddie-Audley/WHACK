@@ -20,41 +20,28 @@ const log = (m) => {
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
-const say = (m) => { $("speech").textContent = m; $("speech").classList.toggle("show", !!m); };
-// Keep the bubble above the ambassador's head.
-function placeBubble() {
-  requestAnimationFrame(placeBubble);
-  if (!scene) return;
-  const p = scene.headScreen();
-  const b = $("speech");
-  const half = b.offsetWidth / 2, r = $("stage").getBoundingClientRect();
-  const x = Math.min(Math.max(p.x, r.left + 28 + half), r.right - 28 - half);
-  b.style.left = x + "px";
-  b.style.top = (p.y - 22) + "px";
-}
+const say = (m) => scene?.say(m);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const board = document.createElement("canvas");
 board.width = W; board.height = H;
 renderBoard(board, emptyGrid());
 let scene, imagined, peer;
-placeBubble();
 
 let sent = 0;            // describer: facts drawn so far
 const guesses = {};      // guesser: category id -> { value, seen, reasoning }
 const remaining = () => CATEGORIES.filter((c) => !(c.id in guesses));
 const describer = () => role === "a";
 
-// Fact tiles, and (guesser) the imagined world.
-function renderTiles(freshId) {
+// Known facts as sentences, in the order they landed, and (guesser) the imagined world.
+function renderFacts(freshId) {
+  const ids = describer() ? world.order.slice(0, sent) : Object.keys(guesses);
   const known = {};
-  for (const c of CATEGORIES) {
-    if (describer() && world.order.indexOf(c.id) < sent) known[c.id] = world.values[c.id];
-    if (!describer() && guesses[c.id]) known[c.id] = guesses[c.id].value;
-  }
-  $("tiles").innerHTML = CATEGORIES.map((c) =>
-    `<div class="prop ${c.id === freshId ? "fresh" : ""}"><span class="label">${c.label}</span><span class="chips">${
-      c.values.map((v) => `<span class="chip ${known[c.id] === v ? "on" : ""}">${v}</span>`).join("")}</span></div>`).join("");
+  for (const id of ids) known[id] = describer() ? world.values[id] : guesses[id].value;
+  $("facts").innerHTML = ids.map((id) => {
+    const c = CATEGORIES.find((c) => c.id === id);
+    return `<div class="fact ${id === freshId ? "fresh" : ""}">${c.sentences[known[id]]}</div>`;
+  }).join("");
   if (imagined) imagined.showWorld(known);
 }
 
@@ -79,7 +66,7 @@ async function describe() {
       await sleep(140);
     }
     sent++;
-    renderTiles(id);
+    renderFacts(id);
     scene.pose = "raised";
     document.body.classList.add("raised");
     await sleep(1200);
@@ -102,7 +89,7 @@ async function readPeer() {
   guesses[out.category] = out;
   const c = CATEGORIES.find((c) => c.id === out.category);
   log(`see: ${out.seen} → ${c.label} = ${out.value} (${out.reasoning}) / "${out.thought}"`);
-  renderTiles(out.category);
+  renderFacts(out.category);
   say(out.thought);
   if (Object.keys(guesses).length >= N) await finish();
 }
@@ -152,7 +139,7 @@ async function start(r) {
   scene.showWorld(world.values);
   if (!describer()) imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
   peer = new WebcamPeer($("video"), $("preview"));
-  renderTiles();
+  renderFacts();
   if (describer()) describe();
   else { await peer.start(); setInterval(tick, 1000); }
 }

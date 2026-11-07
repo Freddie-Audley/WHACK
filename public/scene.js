@@ -18,7 +18,7 @@ const PALETTES = [
 const TRUNK = 0x7a5a3e;
 
 // Which way things are pulled, and how hard.
-const GRAVITY = { down: [0, -9, 0], up: [0, 3, 0], sideways: [5, 0, 0], none: [0, 0, 0] };
+const GRAVITY = { down: [0, -9, 0], up: [0, 3, 0], sideways: [5, 0, 0], "not at all": [0, 0, 0] };
 const gust = (t) => 0.5 + 0.5 * Math.sin(t * 0.8) * Math.sin(t * 0.31 + 1);
 
 const shade = (m) => { m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
@@ -110,20 +110,20 @@ export class WorldView {
     const add = (m, shadows = true) => { this.world.add(shadows ? shade(m) : m); return m; };
     const P = pick(PALETTES);
     const g = GRAVITY[v.gravity] ?? GRAVITY.down;
-    const free = v.gravity === "none";
+    const free = v.gravity === "not at all";
     const lean = v.gravity === "sideways" ? -0.35 : v.weather === "wind" ? -0.12 : 0;
 
     let sky = new THREE.Color(P.sky);
-    if (v.suns === "none") sky = new THREE.Color(0x2f2b55);
-    if (v.suns === "two") sky.lerp(new THREE.Color(0xf3d2a0), 0.4);
-    if (v.suns === "three") sky.lerp(new THREE.Color(0xf0b6b0), 0.5);
+    if (v.suns === "no sun") sky = new THREE.Color(0x2f2b55);
+    if (v.suns === "two suns") sky.lerp(new THREE.Color(0xf3d2a0), 0.4);
+    if (v.suns === "three suns") sky.lerp(new THREE.Color(0xf0b6b0), 0.5);
     if (v.weather === "snow") sky.lerp(new THREE.Color(0xdfe4ea), 0.6);
     this.scene.background = sky;
     this.scene.fog.color = sky;
     this.hemi.color = sky.clone().lerp(new THREE.Color(0xffffff), 0.5);
-    this.hemi.intensity = v.suns === "none" ? 0.5 : 1.0;
-    this.sun.intensity = v.suns === "none" ? 0.7 : 2.0;
-    this.sun.color.set(v.suns === "none" ? 0xb8c4ff : 0xfff4d6);
+    this.hemi.intensity = v.suns === "no sun" ? 0.5 : 1.0;
+    this.sun.intensity = v.suns === "no sun" ? 0.7 : 2.0;
+    this.sun.color.set(v.suns === "no sun" ? 0xb8c4ff : 0xfff4d6);
 
     // Ground: gently uneven unless flat, water or pitted; always level near the camera.
     const amp = ["flat", "water", "holes"].includes(v.ground) ? 0 : 0.35;
@@ -134,7 +134,7 @@ export class WorldView {
     };
     const groundColour = new THREE.Color(v.ground === "water" ? 0x6fb7d9 : P.ground);
     if (v.weather === "snow") groundColour.lerp(new THREE.Color(0xffffff), 0.75);
-    if (v.suns === "none") groundColour.multiplyScalar(0.6);
+    if (v.suns === "no sun") groundColour.multiplyScalar(0.6);
     const geo = new THREE.PlaneGeometry(70, 70, 56, 56);
     const gp = geo.attributes.position;
     for (let i = 0; i < gp.count; i++) gp.setZ(i, this.groundY(gp.getX(i), -gp.getY(i)));
@@ -180,7 +180,7 @@ export class WorldView {
 
     // Suns, moon, ring, stars: flat discs far away, untouched by fog.
     const disc = (r, colour, opacity = 1) => new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: colour, fog: false, transparent: opacity < 1, opacity }));
-    const n = { none: 0, one: 1, two: 2, three: 3 }[v.suns] ?? 0;
+    const n = { "no sun": 0, "one sun": 1, "two suns": 2, "three suns": 3 }[v.suns] ?? 0;
     const tints = [0xfff1a8, 0xffb38a, 0xc8f0ff];
     for (let i = 0; i < n; i++) {
       const r = rand(1.4, 2.4), x = -9 + i * 8 + rand(-1, 1), y = rand(8, 12);
@@ -192,7 +192,7 @@ export class WorldView {
       const ring = add(new THREE.Mesh(new THREE.TorusGeometry(rand(4, 7), 0.12, 4, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.leaf).lerp(sky, 0.5), fog: false })), false);
       ring.position.set(rand(-6, 6), 11, -31); ring.rotation.x = rand(1.1, 1.4);
     }
-    if (v.suns === "none") add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position",
+    if (v.suns === "no sun") add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position",
       new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),
       new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, fog: false })), false);
 
@@ -266,8 +266,8 @@ export class WorldView {
     };
     const place = (size, x, z) => { const b = being(size, x, z); b.position.set(x, 0, z); add(b); };
     if (v.inhabitants === "one giant") place(5, 7, -13);
-    if (v.inhabitants === "a few large") for (let i = 0; i < 3; i++) place(2.2, -8 + i * 7, -9 - i);
-    if (v.inhabitants === "countless tiny") for (let k = 0; k < 6; k++) {
+    if (v.inhabitants === "a few big ones") for (let i = 0; i < 3; i++) place(2.2, -8 + i * 7, -9 - i);
+    if (v.inhabitants === "countless tiny ones") for (let k = 0; k < 6; k++) {
       const cx = rand(-13, 13), cz = rand(-14, -2);
       for (let i = 0; i < 15; i++) place(0.35, cx + rand(-2.5, 2.5), cz + rand(-2, 2));
     }
@@ -279,7 +279,7 @@ export class WorldView {
       let x = rand(-20, 20);
       this.movers.push((t) => { x += (7 + gust(t) * 7) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
     }
-    if (v.weather === "falling rocks") for (let i = 0; i < 12; i++) {
+    if (v.weather === "rocks") for (let i = 0; i < 12; i++) {
       const r = rand(0.3, 0.7);
       const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(0x8c8498)));
       this.movers.push(this.rock(m, r, GRAVITY.down, (p, vel) => { p.set(rand(-12, 12), rand(12, 18), rand(-12, -2)); vel.set(rand(-0.5, 0.5), 0, 0); }, { respawnWhenResting: true }));
@@ -322,7 +322,6 @@ export class Scene extends WorldView {
     const dark = flat(0x3a3560), white = flat(0xffffff);
     this.body = new THREE.Group();
     this.body.scale.setScalar(boardCanvas ? 1.25 : 1.1);
-    this.body.position.x = boardCanvas ? -0.9 : -0.3;
     this.scene.add(this.body);
 
     // Torso: tall and thin, short and wide, or round. Two legs with feet.
@@ -374,7 +373,7 @@ export class Scene extends WorldView {
       this.head.add(a);
       this.antennae.push(a);
     }
-    this.headTop = hr * (na ? 1.9 : 1.05);
+    this.headTop = hr * 1.05; // the speech bubble sits on the head itself; antennae poke up behind it
 
     // Arms pivot at the shoulders, end in a hand, and reach just behind the board's bottom corners.
     this.arms = [];
@@ -393,6 +392,7 @@ export class Scene extends WorldView {
     this.gaze = { y: 0, z: 0, next: 0 };
     this.blinkAt = rand(1, 4);
     this.boardY = neck - 0.6;
+    this.buildBubble();
     if (!boardCanvas) return;
     this.boardTex = new THREE.CanvasTexture(boardCanvas);
     this.boardTex.colorSpace = THREE.SRGBColorSpace;
@@ -408,11 +408,33 @@ export class Scene extends WorldView {
 
   boardChanged() { if (this.boardTex) this.boardTex.needsUpdate = true; }
 
-  // Page-pixel position of the top of the ambassador's head, for the speech bubble.
-  headScreen() {
-    const v = this.head.localToWorld(new THREE.Vector3(0, this.headTop, 0)).project(this.camera);
-    const r = this.container.getBoundingClientRect();
-    return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
+  // A speech bubble: an HTML element over the stage, pinned each frame to the head's screen position.
+  buildBubble() {
+    this.bubble = document.createElement("div");
+    this.bubble.className = "bubble";
+    this.bubble.hidden = true;
+    this.container.appendChild(this.bubble);
+  }
+
+  say(text) {
+    this.bubble.hidden = !text;
+    this.bubble.textContent = text;
+  }
+
+  placeBubble() {
+    if (this.bubble.hidden) return;
+    const v = this.head.getWorldPosition(new THREE.Vector3());
+    v.y += (this.headTop + 0.1) * this.body.scale.y;
+    v.project(this.camera);
+    const W = this.container.clientWidth, H = this.container.clientHeight;
+    const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H; // where the tail tip wants to be
+    const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight, TAIL = 16, M = 8;
+    // The tail leaves a third of the way along the bottom edge; the bubble slides sideways to stay on the stage, and the tail follows the head.
+    const left = Math.min(Math.max(x - bw * 0.35, M), W - bw - M);
+    const top = Math.max(y - TAIL - bh, M);
+    this.bubble.style.left = `${left}px`;
+    this.bubble.style.top = `${top}px`;
+    this.bubble.style.setProperty("--tx", `${Math.min(Math.max(x - left, 24), bw - 24)}px`);
   }
 
   tick(t) {
@@ -432,6 +454,7 @@ export class Scene extends WorldView {
     const blink = t > this.blinkAt ? 0.1 : 1;
     for (const e of this.eyes) e.scale.y = blink;
     for (const [i, a] of this.antennae.entries()) a.rotation.x = Math.sin(t * 2.5 + i) * 0.1;
+    this.placeBubble();
 
     if (!this.boardGroup) { // no board: arms hang and swing a little
       for (const [i, a] of this.arms.entries()) a.rotation.x = lerp(a.rotation.x, Math.sin(t * 1.5 + i * Math.PI) * 0.12);

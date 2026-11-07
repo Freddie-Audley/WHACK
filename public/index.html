@@ -9,21 +9,21 @@
   html, body { height: 100%; }
   body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; color: #1d1d3a; background: linear-gradient(135deg, var(--bg1, rgba(255,214,232,.25)), var(--bg2, rgba(201,228,255,.25))); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
   .surface { display: none; position: fixed; top: 40px; bottom: 14px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
-  body.describe #stage, body.guess #stage { display: block; }
+  body.play #stage, body.play #imagined, body.play #cam { display: block; }
   #stage { left: 14px; right: 14px; }
   #stage canvas, #imagined canvas { display: block; }
   .bubble { position: absolute; max-width: min(60%, 520px); padding: 12px 16px; border-radius: 18px; background: rgba(255,255,255,.92); color: #1d1d3a; font-size: 26px; line-height: 1.25; white-space: pre-wrap; pointer-events: none; transition: opacity .3s; }
-  .bubble::after { content: ""; position: absolute; top: 100%; left: calc(var(--tx, 50%) - 6px); border: 0 solid transparent; border-width: 16px 18px 0 6px; border-top-color: rgba(255,255,255,.92); }
   body.raised .bubble { opacity: 0; }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
-  body.guess #stage { right: calc(50% + 7px); }
+  body.play #stage { right: calc(50% + 7px); }
   #imagined { left: calc(50% + 7px); right: 14px; }
-  body.guess #imagined { display: block; }
 
-  .title { font-size: 32px; font-weight: 500; }
+  .title { font-size: 40px; font-weight: 500; }
 
-  /* The webcam feed is only read by the peer sampler, never shown. Kept rendering (not display:none) so frames keep decoding. */
-  #video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  #cam { position: fixed; left: 28px; bottom: 28px; width: 340px; padding: 8px; display: none; z-index: 5; background: rgba(255,255,255,.55); -webkit-backdrop-filter: blur(30px) saturate(170%); backdrop-filter: blur(30px) saturate(170%); border-radius: 10px; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
+  #cam video { width: 100%; display: block; border-radius: 6px; transform: scaleX(-1); }
+  #cam .frame { position: relative; }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; transform: scaleX(-1); pointer-events: none; }
   #preview { display: none; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -42,16 +42,21 @@
 <div id="stage" class="surface"></div>
 <div id="imagined" class="surface"></div>
 
-<video id="video" playsinline muted></video>
-<canvas id="preview" width="160" height="90"></canvas>
+<div id="cam">
+  <div class="frame">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay" width="320" height="180"></canvas>
+  </div>
+  <canvas id="preview" width="160" height="90"></canvas>
+</div>
 
 <div id="start">
   <div id="card">
     <h1 class="title">First Contact</h1>
     <p>by whack_a_snake</p>
     <div class="row">
-      <button id="startA">Describe my world</button>
-      <button id="startB">Guess their world</button>
+      <button id="startA">Go first</button>
+      <button id="startB">Go second</button>
     </div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>

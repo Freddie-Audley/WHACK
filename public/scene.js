@@ -1,8 +1,12 @@
 import * as THREE from "three";
 
 const flat = (color) => new THREE.MeshStandardMaterial({ color, flatShading: true });
-const rand = (a, b) => a + Math.random() * (b - a);
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+// Random numbers come from `rng`. While a world is being built it is seeded, so a world rebuilt
+// with one more fact keeps its palette and layout: things get added, nothing shuffles.
+let rng = Math.random;
+const rand = (a, b) => a + rng() * (b - a);
+const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+const seeded = (s) => () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const col = (h, s, l) => new THREE.Color().setHSL(((h % 1) + 1) % 1, s, l);
 const DT = 0.016;
 
@@ -58,6 +62,7 @@ export class WorldView {
 
     this.world = new THREE.Group();
     this.scene.add(this.world);
+    this.seed = (Math.random() * 1e9) | 0;
     this.showWorld({});
 
     new ResizeObserver(() => this.resize()).observe(container);
@@ -102,18 +107,22 @@ export class WorldView {
     return step;
   }
 
-  // Rebuild the backdrop from facts {suns, gravity, inhabitants, ground, weather}; unknown facts are left out.
-  // Palette, tree shapes, moons and rings are random, so no two worlds look the same.
+  // Rebuild the backdrop from facts {suns, gravity, inhabitants, ground, weather}. An unknown fact leaves its
+  // part of the world white: no facts at all is a blank white void, and each fact paints its own piece in.
+  // Palette, tree shapes, moons and rings are random (per view), so no two worlds look the same.
   showWorld(v) {
     this.world.clear();
     this.movers = [];
     const add = (m, shadows = true) => { this.world.add(shadows ? shade(m) : m); return m; };
+    const known = (k) => v[k] != null;
+    const reseed = (k) => { rng = seeded(this.seed + k); }; // each section draws from its own stream
+    reseed(0);
     const P = pick(PALETTES);
     const g = GRAVITY[v.gravity] ?? GRAVITY.down;
     const free = v.gravity === "not at all";
     const lean = v.gravity === "sideways" ? -0.35 : v.weather === "wind" ? -0.12 : 0;
 
-    let sky = new THREE.Color(P.sky);
+    let sky = new THREE.Color(known("suns") ? P.sky : 0xffffff);
     if (v.suns === "no sun") sky = new THREE.Color(0x2f2b55);
     if (v.suns === "two suns") sky.lerp(new THREE.Color(0xf3d2a0), 0.4);
     if (v.suns === "three suns") sky.lerp(new THREE.Color(0xf0b6b0), 0.5);
@@ -125,14 +134,15 @@ export class WorldView {
     this.sun.intensity = v.suns === "no sun" ? 0.7 : 2.0;
     this.sun.color.set(v.suns === "no sun" ? 0xb8c4ff : 0xfff4d6);
 
-    // Ground: gently uneven unless flat, water or pitted; always level near the camera.
-    const amp = ["flat", "water", "holes"].includes(v.ground) ? 0 : 0.35;
+    // Ground: gently uneven unless flat, water or pitted (or not yet known); always level near the camera.
+    reseed(1);
+    const amp = !known("ground") || ["flat", "water", "holes"].includes(v.ground) ? 0 : 0.35;
     this.groundY = (x, z) => {
       if (!amp) return 0;
       const k = Math.min(1, Math.max(0, (Math.hypot(x, z) - 2) / 4));
       return amp * k * (Math.sin(x * 0.45 + 1.3) * Math.cos(z * 0.38) + 0.6 * Math.sin(x * 0.9 - z * 0.7));
     };
-    const groundColour = new THREE.Color(v.ground === "water" ? 0x6fb7d9 : P.ground);
+    const groundColour = new THREE.Color(!known("ground") ? 0xffffff : v.ground === "water" ? 0x6fb7d9 : P.ground);
     if (v.weather === "snow") groundColour.lerp(new THREE.Color(0xffffff), 0.75);
     if (v.suns === "no sun") groundColour.multiplyScalar(0.6);
     const geo = new THREE.PlaneGeometry(70, 70, 56, 56);
@@ -178,7 +188,8 @@ export class WorldView {
       this.movers.push((t) => { const k = (t * 0.35 + p) % 3; r.scale.setScalar(0.3 + k); r.position.set(x, 0.03, z); r.material.opacity = 0.7 * (1 - k / 3); });
     }
 
-    // Suns, moon, ring, stars: flat discs far away, untouched by fog.
+    // Suns, moon, ring, stars: flat discs far away, untouched by fog. The sky stays empty until the suns are known.
+    reseed(2);
     const disc = (r, colour, opacity = 1) => new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: colour, fog: false, transparent: opacity < 1, opacity }));
     const n = { "no sun": 0, "one sun": 1, "two suns": 2, "three suns": 3 }[v.suns] ?? 0;
     const tints = [0xfff1a8, 0xffb38a, 0xc8f0ff];
@@ -187,8 +198,8 @@ export class WorldView {
       add(disc(r, tints[i]), false).position.set(x, y, -30);
       add(disc(r * 1.7, tints[i], 0.25), false).position.set(x, y, -30.1);
     }
-    if (Math.random() < 0.5) add(disc(rand(0.5, 1.1), 0xf4f1e8, 0.9), false).position.set(rand(-14, 14), rand(9, 13), -29);
-    if (Math.random() < 0.35) {
+    if (known("suns") && rng() < 0.5) add(disc(rand(0.5, 1.1), 0xf4f1e8, 0.9), false).position.set(rand(-14, 14), rand(9, 13), -29);
+    if (known("suns") && rng() < 0.35) {
       const ring = add(new THREE.Mesh(new THREE.TorusGeometry(rand(4, 7), 0.12, 4, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.leaf).lerp(sky, 0.5), fog: false })), false);
       ring.position.set(rand(-6, 6), 11, -31); ring.rotation.x = rand(1.1, 1.4);
     }
@@ -196,10 +207,11 @@ export class WorldView {
       new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),
       new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, fog: false })), false);
 
-    // Trees in clumps, of one random shape. They bend in wind, lean with sideways gravity, and float with none.
-    if (v.ground !== "water") {
+    // Trees in clumps, of one random shape, once the ground is known. They bend in wind, lean with sideways gravity, and float with none.
+    reseed(3);
+    if (known("ground") && v.ground !== "water") {
       const leaf = flat(P.leaf), trunk = flat(TRUNK);
-      const kind = (Math.random() * 3) | 0;
+      const kind = (rng() * 3) | 0;
       for (let k = 0; k < 5; k++) {
         const cx = rand(-15, 15), cz = rand(-15, -4);
         for (let i = rand(2, 5) | 0; i--;) {
@@ -222,8 +234,9 @@ export class WorldView {
       }
     }
 
-    // Boulders lie about in every dry world; under odd gravity they lift off, roll, or tumble.
-    if (v.ground !== "water") for (let i = 0; i < 8; i++) {
+    // Boulders arrive with gravity, since they are what shows it: they rest, lift off, roll, or tumble.
+    reseed(4);
+    if (known("gravity") && v.ground !== "water") for (let i = 0; i < 8; i++) {
       const r = rand(0.25, 0.7);
       const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(P.rock)));
       m.rotation.set(rand(0, 6), rand(0, 6), 0);
@@ -265,6 +278,7 @@ export class WorldView {
       return body;
     };
     const place = (size, x, z) => { const b = being(size, x, z); b.position.set(x, 0, z); add(b); };
+    reseed(5);
     if (v.inhabitants === "one giant") place(5, 7, -13);
     if (v.inhabitants === "a few big ones") for (let i = 0; i < 3; i++) place(2.2, -8 + i * 7, -9 - i);
     if (v.inhabitants === "countless tiny ones") for (let k = 0; k < 6; k++) {
@@ -273,6 +287,7 @@ export class WorldView {
     }
 
     // Weather
+    reseed(6);
     if (v.weather === "wind") for (let i = 0; i < 14; i++) {
       const s = add(new THREE.Mesh(new THREE.BoxGeometry(rand(2, 4), 0.03, 0.03), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })), false);
       const y = rand(0.5, 7), z = rand(-12, 1);
@@ -295,6 +310,7 @@ export class WorldView {
         a.needsUpdate = true;
       });
     }
+    rng = Math.random; // movers that respawn at run time, and the ambassador, stay properly random
   }
 
   tick() {}
@@ -427,14 +443,13 @@ export class Scene extends WorldView {
     v.y += (this.headTop + 0.1) * this.body.scale.y;
     v.project(this.camera);
     const W = this.container.clientWidth, H = this.container.clientHeight;
-    const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H; // where the tail tip wants to be
-    const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight, TAIL = 16, M = 8;
-    // The tail leaves a third of the way along the bottom edge; the bubble slides sideways to stay on the stage, and the tail follows the head.
-    const left = Math.min(Math.max(x - bw * 0.35, M), W - bw - M);
-    const top = Math.max(y - TAIL - bh, M);
+    const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H; // top of the head on screen
+    const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight, GAP = 12, M = 8;
+    // Centred above the head; slides sideways only as far as needed to stay on the stage.
+    const left = Math.min(Math.max(x - bw / 2, M), W - bw - M);
+    const top = Math.max(y - GAP - bh, M);
     this.bubble.style.left = `${left}px`;
     this.bubble.style.top = `${top}px`;
-    this.bubble.style.setProperty("--tx", `${Math.min(Math.max(x - left, 24), bw - 24)}px`);
   }
 
   tick(t) {

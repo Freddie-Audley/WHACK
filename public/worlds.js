@@ -1,5 +1,5 @@
-// Facts about a world. Chosen so that honest emoji for different facts look alike
-// (a sun: one sun, or nothing from above? an arrow: gravity, or wind?).
+// Facts about a world. Chosen so that honest drawings of different facts look alike
+// (two circles: two suns, or two large beings? arrows: gravity, or wind?).
 export const CATEGORIES = [
   { id: "suns", label: "In the sky", values: ["no sun", "one sun", "two suns", "three suns"] },
   { id: "gravity", label: "Things fall", values: ["down", "up", "sideways", "not at all"] },

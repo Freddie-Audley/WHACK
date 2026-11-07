@@ -1,18 +1,21 @@
-import { CATEGORIES, generateWorld } from "./worlds.js";
-import { renderBoard, cleanEmoji, W, H } from "./board.js";
+import { generateSeed } from "./worlds.js";
+import { prepareSequence, collapseReadings, sanitiseSvg, svgUrl, svgToJpeg } from "./board.js";
 import { WebcamPeer } from "./peer.js";
-import { Scene, WorldView } from "./scene.js";
-import { draw, interpret, report, loadKey } from "./api.js";
+import { paintWorld, planEmojis, readFrames, paintGuess, loadKey } from "./api.js";
 
-// One laptop describes its world (role "a"), the other only guesses (role "b").
-// Each laptop's webcam points at the other's screen.
+// Laptop 1 ("a") paints a secret world and shows it to laptop 2 one emoji per second
+// on a white screen. Laptop 2 ("b") watches through its webcam and keeps repainting
+// what it imagines. Space (or the end of the sequence) stops the run, then laptop 1
+// shows 🏁 and reveals the real world.
 const q = new URLSearchParams(location.search);
-const N = Math.min(CATEGORIES.length, +q.get("n") || CATEGORIES.length);
-const HOLD_MS = 12000; // how long the describer holds each board up
-let role = "a";
-const world = generateWorld();
-world.order = world.order.slice(0, N);
+const COUNT = Math.max(1, +q.get("n") || 60); // emojis per run, one per second
+const SECOND = +q.get("ms") || 1000;
+const END = "🏁";                             // "that's all", read by laptop 2
+const END_MS = 2500;
+const FRAME_MS = 500;                         // laptop 2 samples twice per emoji
+const BATCH = 8;                              // frames per read call
 
+let role = "a";
 const $ = (id) => document.getElementById(id);
 const log = (m) => {
   const line = `[${role}] ${m.replace(/\n/g, " ")}`;
@@ -20,96 +23,160 @@ const log = (m) => {
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
-const say = (m) => scene?.say(m);
+const status = (m) => { $("status").textContent = m; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const board = document.createElement("canvas");
-board.width = W; board.height = H;
-renderBoard(board);
-let scene, imagined, peer;
-
-let sent = 0;            // describer: facts shown so far
-const guesses = {};      // guesser: category id -> { value, seen, reasoning }
-const remaining = () => CATEGORIES.filter((c) => !(c.id in guesses));
-const describer = () => role === "a";
-
-// Guesser: rebuild the imagined world from the facts guessed so far.
-function showGuesses() {
-  const known = {};
-  for (const id in guesses) known[id] = guesses[id].value;
-  imagined.showWorld(known);
+// Space ends the run early. Sleeps wake up as soon as it's pressed.
+let stopped = false, wake = () => {};
+const nap = (ms) => new Promise((r) => { const t = setTimeout(r, ms); wake = () => { clearTimeout(t); r(); }; });
+function stop() {
+  if (stopped) return;
+  stopped = true;
+  log("stop pressed");
+  wake();
 }
 
-// Describer: pick an emoji for each fact, hold it up for a while, lower it, next.
-async function describe() {
-  await sleep(1500);
-  for (sent = 0; sent < N; ) {
-    const id = world.order[sent];
-    const category = CATEGORIES.find((c) => c.id === id);
-    const value = world.values[id];
-    say("");
-    scene.pose = "drawing";
-    renderBoard(board); scene.boardChanged();
-    let out;
-    try { out = await draw({ category, value, categories: CATEGORIES }); }
-    catch (e) { log(`error: ${e.message}`); say("…"); await sleep(4000); continue; }
-    const emoji = cleanEmoji(out.emoji);
-    log(`show ${emoji} for "${category.label}: ${value}" — ${out.note} / "${out.thought}"`);
-    say(out.thought);
-    await sleep(1500);
-    renderBoard(board, emoji); scene.boardChanged();
-    await sleep(800);
-    sent++;
-    scene.pose = "raised";
-    document.body.classList.add("raised");
-    await sleep(1200);
-    peer.publish(true, board.toDataURL("image/png"));
-    for (let t = 0; t < HOLD_MS; t += 3000) { await sleep(3000); peer.publish(true, board.toDataURL("image/png")); }
-    peer.publish(false, null);
-    scene.pose = "idle";
-    document.body.classList.remove("raised");
-    await sleep(2000);
+function showPicture(svg) {
+  const holder = $("picture");
+  const old = [...holder.children];
+  const img = new Image();
+  img.onload = () => {
+    holder.append(img);
+    img.getBoundingClientRect();
+    img.classList.add("show");
+    setTimeout(() => old.forEach((o) => { URL.revokeObjectURL(o.src); o.remove(); }), 1400);
+  };
+  img.onerror = () => log("error: picture failed to load");
+  img.src = svgUrl(svg);
+}
+
+// ---- Laptop 1 -------------------------------------------------------------
+
+async function retry(what, fn, tries = 3) {
+  for (let i = 1; ; i++) {
+    try { return await fn(); }
+    catch (e) { log(`error: ${what}: ${e.message}`); if (i >= tries) throw e; await sleep(1500); }
   }
-  say("");
 }
 
-// Guesser: every time their board goes up, read it and lock in a fact.
-async function readPeer() {
-  const image = peer.capture();
-  if (!image) return;
-  say("…");
-  const out = await interpret({ image, remaining: remaining() });
-  guesses[out.category] = out;
-  const c = CATEGORIES.find((c) => c.id === out.category);
-  log(`see: ${out.seen} → ${c.label} = ${out.value} (${out.reasoning}) / "${out.thought}"`);
-  showGuesses();
-  say(out.thought);
-  if (Object.keys(guesses).length >= N) await finish();
+async function describe() {
+  status("imagining a world…");
+  const seed = generateSeed();
+  let world;
+  try {
+    world = await retry("paint", async () => {
+      const out = await paintWorld({ seed });
+      return { title: out.title, svg: sanitiseSvg(out.svg) };
+    });
+  } catch { status("couldn't paint a world, restart to try again"); return; }
+  log(`world: "${world.title}" from ${seed}`);
+
+  let sequence = [];
+  if (!stopped) {
+    status("deciding what to say…");
+    const image = await svgToJpeg(world.svg);
+    if (!image) log("no raster in this webview, describing from the SVG source");
+    try {
+      const plan = await retry("plan", () => planEmojis({ image, svg: image ? null : world.svg, count: COUNT }));
+      sequence = prepareSequence(plan.emojis, COUNT, END);
+      log(`plan: ${plan.plan} — ${sequence.join(" ")}`);
+    } catch { status("couldn't plan the emojis"); }
+  }
+  status("");
+
+  const t0 = performance.now();
+  for (let i = 0; i < sequence.length && !stopped; i++) {
+    $("emoji").textContent = sequence[i];
+    await nap(t0 + (i + 1) * SECOND - performance.now());
+  }
+
+  $("emoji").textContent = END;
+  await sleep(END_MS);
+  $("emoji").textContent = "";
+  document.body.classList.add("revealed");
+  showPicture(world.svg);
+  log("revealed");
 }
 
-async function finish() {
-  finished = true;
-  await sleep(3000);
-  const theirs = CATEGORIES.filter((c) => guesses[c.id]).map((c) => ({ label: c.label, value: guesses[c.id].value }));
-  const out = await report({ theirs });
-  say(out.report);
-  log(`report: ${out.report}`);
+// ---- Laptop 2 -------------------------------------------------------------
+
+let peer, frameTimer;
+const frames = [];   // webcam frames not yet read
+const received = []; // emojis read so far, in order
+let last = "", ended = false;
+let drawing = false, drawn = 0, imagined = "";
+
+function showTrail() {
+  $("trail").innerHTML = "";
+  const span = document.createElement("span");
+  span.textContent = received.join("") + (ended ? END : "");
+  $("trail").append(span);
 }
 
-let busy = false, finished = false, peerWas = false, lastSample = false, stable = 0;
-async function tick() {
-  const r = peer.raised();
-  stable = r === lastSample ? stable + 1 : 0;
-  lastSample = r;
-  if (r === peerWas || stable < 1 || busy || finished) return; // need two consistent samples
-  peerWas = r;
-  if (!r) return;
-  busy = true;
-  try { await readPeer(); } catch (e) { log("error: " + e.message); say("…"); }
-  busy = false;
+async function readLoop() {
+  while (!ended && !stopped) {
+    if (frames.length < BATCH) await nap(BATCH * FRAME_MS);
+    if (stopped) break;
+    if (!frames.length) continue;
+    const batch = frames.splice(0, BATCH * 2);
+    let readings;
+    try { readings = await readFrames({ frames: batch }); }
+    catch (e) { log(`error: read: ${e.message}`); continue; }
+    const out = collapseReadings(readings, last, END);
+    last = out.last;
+    if (out.added.length) {
+      received.push(...out.added);
+      log(`read ${out.added.join(" ")}`);
+      status("");
+      showTrail();
+      draw();
+    }
+    if (out.ended) { log("saw the end flag"); break; }
+  }
+  finish();
 }
 
-// The app opens as a small start window; grow it to game size once a role is picked.
+async function draw() {
+  if (drawing) return;
+  drawing = true;
+  while (received.length > drawn) {
+    const emojis = received.slice();
+    try {
+      const out = await paintGuess({ emojis, previous: imagined });
+      showPicture(sanitiseSvg(out.svg));
+      imagined = out.imagined;
+      log(`imagined from ${emojis.length}: ${out.imagined}`);
+    } catch (e) {
+      log(`error: paint guess: ${e.message}`);
+      await sleep(2000);
+    }
+    drawn = emojis.length;
+  }
+  drawing = false;
+}
+
+function finish() {
+  if (ended) return;
+  ended = true;
+  clearInterval(frameTimer);
+  peer?.video.srcObject?.getTracks().forEach((t) => t.stop());
+  showTrail();
+  if (!received.length) status("nothing seen");
+  draw(); // one last painting with everything, if anything arrived since the last one
+}
+
+async function guess() {
+  status("watching…");
+  peer = new WebcamPeer($("video"));
+  try { await peer.start(); }
+  catch (e) { log(`error: webcam: ${e.message}`); status("no webcam"); return; }
+  frameTimer = setInterval(() => { const f = peer.capture(); if (f) frames.push(f); }, FRAME_MS);
+  readLoop();
+}
+
+// ---- Start ----------------------------------------------------------------
+
+// The app opens as a small start window; grow it once a role is picked.
 async function growWindow() {
   const t = window.__TAURI__;
   if (!t) return;
@@ -124,15 +191,10 @@ async function start(r) {
   role = r;
   await growWindow();
   $("start").classList.add("hide");
-  document.body.classList.add(describer() ? "describe" : "guess");
-  document.body.style.setProperty("--bg1", `hsla(${world.hue * 360}, 80%, 80%, .25)`);
-  document.body.style.setProperty("--bg2", `hsla(${(world.hue * 360 + 60) % 360}, 80%, 80%, .25)`);
-  scene = new Scene($("stage"), describer() ? board : null, world.hue);
-  scene.showWorld(world.values);
-  if (!describer()) imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
-  peer = new WebcamPeer($("video"), $("preview"));
-  if (describer()) describe();
-  else { await peer.start(); setInterval(tick, 1000); }
+  document.body.classList.add("running", role === "a" ? "describe" : "guess");
+  addEventListener("keydown", (e) => { if (e.code === "Space" || e.code === "Escape") { e.preventDefault(); stop(); } });
+  if (role === "a") describe();
+  else guess();
 }
 
 const origErr = console.error.bind(console);
@@ -146,4 +208,5 @@ addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message ||
   if (!key) $("nokey").style.display = "block";
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
+  if (q.get("role")) start(q.get("role"));
 })();

@@ -8,11 +8,7 @@ export async function loadKey() {
   return apiKey;
 }
 
-const VOCAB = `The whiteboard can show exactly one emoji, very large. No words, letters or digits.`;
-
-const listCategories = (cats) => cats.map((c) => `- ${c.id}: "${c.label}" — one of: ${c.values.join(" / ")}`).join("\n");
-
-async function call(system, content, schema, attempt = 0) {
+async function call(system, content, schema, { effort = "high", maxTokens = 4000 } = {}, attempt = 0) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -23,102 +19,135 @@ async function call(system, content, schema, attempt = 0) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 4000,
-      output_config: { effort: "high", format: { type: "json_schema", schema } },
+      max_tokens: maxTokens,
+      output_config: { effort, format: { type: "json_schema", schema } },
       system,
       messages: [{ role: "user", content }],
     }),
   });
   if (!r.ok) {
     const text = await r.text();
-    if (attempt < 2 && (r.status === 429 || r.status >= 500)) { await new Promise((res) => setTimeout(res, 3000)); return call(system, content, schema, attempt + 1); }
+    if (attempt < 2 && (r.status === 429 || r.status >= 500)) {
+      await new Promise((res) => setTimeout(res, 3000));
+      return call(system, content, schema, { effort, maxTokens }, attempt + 1);
+    }
     throw new Error(`${r.status} ${text.slice(0, 200)}`);
   }
   const msg = await r.json();
   if (msg.stop_reason === "refusal") throw new Error("refused");
+  if (msg.stop_reason === "max_tokens") throw new Error("ran out of tokens");
   return JSON.parse(msg.content.find((b) => b.type === "text").text);
 }
 
-// Describer: one fact -> one emoji.
-export async function draw({ category, value, categories }) {
+const imageBlock = (dataUrl) => {
+  const [, media_type, data] = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+  return { type: "image", source: { type: "base64", media_type, data } };
+};
+
+const SVG_RULES = `Format: one <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"> element filling the whole canvas.
+Style: flat, minimalist shapes. Gradients are fine. No text, no <image>, no <foreignObject>, no <script>, no external references. Keep it under about 8000 characters.`;
+
+const svgSchema = (extra) => ({
+  type: "object",
+  properties: { ...extra, svg: { type: "string" } },
+  required: [...Object.keys(extra), "svg"],
+  additionalProperties: false,
+});
+
+// Laptop 1, once per run: invent and paint a new world. Only laptop 1 ever sees it.
+export async function paintWorld({ seed }) {
   return call(
-    `You are an alien ambassador meeting a stranger from another world. You can only communicate by holding up a whiteboard with a single emoji on it, and you want very badly to be understood.
-${VOCAB}
-
-How to be understood:
-- Think about what the stranger would expect to see for EVERY possible fact, and pick the emoji that is hardest to confuse with the others.
-- Prefer a common, unambiguous emoji. Flag, letter and symbol emoji are poor choices.`,
-    `Fact to communicate — ${category.label}: ${value}.
-
-The stranger knows this list of possible facts but not which one you mean:
-${listCategories(categories)}
-
-Return the emoji, a one-sentence note of what you intended, and "thought": the one short, casual thing you mutter to yourself while choosing it (under 12 words, first person, no greeting, no exclamation marks).`,
-    {
-      type: "object",
-      properties: {
-        emoji: { type: "string", description: "Exactly one emoji character" },
-        note: { type: "string" },
-        thought: { type: "string" },
-      },
-      required: ["emoji", "note", "thought"],
-      additionalProperties: false,
-    },
+    `You paint alien landscapes as SVG.`,
+    `Paint a landscape on an alien world nobody has seen before.
+Some inspiration (use, bend or ignore it): ${seed}.
+Give it a few bold, distinctive features someone could recognise from a description: colours, shapes, things in the sky, what the ground is, any life.
+${SVG_RULES}
+Also give a short private title.`,
+    svgSchema({ title: { type: "string" } }),
+    { effort: "high", maxTokens: 16000 },
   );
 }
 
-// Guesser: photo of the describer's board + the facts still unassigned -> one assignment.
-export async function interpret({ image, remaining }) {
-  const [, mediaType, data] = image.match(/^data:(image\/\w+);base64,(.+)$/);
-  const out = await call(
-    `You are an alien ambassador receiving a message from a stranger who is trying very hard to be understood. The photo shows a whiteboard they are holding up (possibly through a webcam: skewed, blurry, glare; ignore everything outside the white board with the magenta border).
-${VOCAB}
-The emoji communicates exactly one fact about their world.`,
+// Laptop 1: look at the world and plan the whole emoji sequence up front (the channel is one-way).
+export async function planEmojis({ image, svg, count }) {
+  const world = image ? [imageBlock(image), { type: "text", text: "This picture is your world." }]
+                      : [{ type: "text", text: `This SVG is your world:\n${svg}` }];
+  return call(
+    `You are standing in front of a white screen that can show exactly one emoji at a time, one per second. A stranger from another world watches it through a webcam. They have never seen your world and will paint what they think it looks like, updating their painting as each emoji arrives. You want their painting to match yours as closely as possible.`,
     [
-      { type: "image", source: { type: "base64", media_type: mediaType, data } },
+      ...world,
       {
         type: "text",
-        text: `Remaining facts (pick exactly one category, and exactly one of its listed values):
-${listCategories(remaining)}
-
-First say which emoji you can see. Then, for each remaining fact, consider which emoji would stand for it, and choose the single best match with its value. Finally give "thought": what you mutter to yourself as the penny drops, under 15 words, first person, casual, naming the conclusion (no greeting, no exclamation marks).`,
+        text: `Plan exactly ${count} emojis to show, in order.
+- Big picture first: sky colour, what the ground is, the biggest shapes. Then smaller things, then details and where things are.
+- Coloured squares and circles (🟪 🟦 🟧 🟩 ⬛ ⬜ 🟣 🔵 …) are good for colours. Arrows are fine for positions.
+- Repeating an important idea later is fine, but never the same emoji twice in a row.
+- No flags, letters, digits or keycaps. Never use 🏁.
+Also give one sentence on your plan.`,
       },
     ],
     {
       type: "object",
       properties: {
-        seen: { type: "string", description: "What is visible on the board" },
-        category: { type: "string", enum: remaining.map((c) => c.id) },
-        value: { type: "string" },
-        reasoning: { type: "string", description: "One sentence" },
-        thought: { type: "string" },
+        plan: { type: "string" },
+        emojis: { type: "array", items: { type: "string", description: "Exactly one emoji" } },
       },
-      required: ["seen", "category", "value", "reasoning", "thought"],
+      required: ["plan", "emojis"],
       additionalProperties: false,
     },
+    { effort: "high", maxTokens: 8000 },
   );
-  const cat = remaining.find((c) => c.id === out.category) || remaining[0];
-  out.category = cat.id;
-  if (!cat.values.includes(out.value)) {
-    const v = out.value.toLowerCase();
-    out.value = cat.values.find((x) => v.includes(x) || x.includes(v)) || cat.values[0];
-  }
-  return out;
 }
 
-// End of the game: the ambassador's report on the other world, from its guesses.
-export async function report({ theirs }) {
-  const facts = theirs.map((g) => `${g.label}: ${g.value}`).join("; ");
-  return call(
-    `You are an alien ambassador writing home after a first meeting with a stranger from another world. You communicated only with single emoji held up on a whiteboard, so you may well have misunderstood. Be charming and completely confident.`,
-    `What you understood about their world: ${facts}.
-
-Write two short, plain sentences describing their world for the folks back home. No greeting, no flourish.`,
+// Laptop 2: read a batch of webcam frames of laptop 1's screen, in order.
+export async function readFrames({ frames }) {
+  const content = [];
+  frames.forEach((f, i) => content.push({ type: "text", text: `Frame ${i + 1}:` }, imageBlock(f)));
+  content.push({
+    type: "text",
+    text: `These ${frames.length} webcam frames are in time order, about half a second apart. For each frame, say what the other laptop's screen shows:
+- "emoji": a white screen with one large emoji (give that emoji)
+- "blank": a white screen with nothing on it, or only small grey text
+- "other": a picture, a menu, or you can't make it out (give "" as the emoji)
+Ignore everything around the screen.`,
+  });
+  const out = await call(
+    `You read webcam photos of another laptop's screen. While it is talking, the screen is white with one large emoji in the middle.`,
+    content,
     {
       type: "object",
-      properties: { report: { type: "string" } },
-      required: ["report"],
+      properties: {
+        frames: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["emoji", "blank", "other"] },
+              emoji: { type: "string" },
+            },
+            required: ["kind", "emoji"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["frames"],
       additionalProperties: false,
     },
+    { effort: "low", maxTokens: 2000 },
+  );
+  return out.frames;
+}
+
+// Laptop 2: paint its idea of the other world from the emojis alone.
+export async function paintGuess({ emojis, previous }) {
+  return call(
+    `A stranger from another world is trying to show you what their world looks like. They can only hold up one emoji per second. You paint what you imagine, as SVG.`,
+    `Emojis so far, in order: ${emojis.join(" ")}
+${previous ? `Your last painting, from fewer emojis, showed: ${previous}. Keep what still fits and change what doesn't.\n` : ""}
+Paint their world as you imagine it right now. Earlier emojis are probably the big picture, later ones the details.
+${SVG_RULES}
+Also give "imagined": one sentence describing what you painted.`,
+    svgSchema({ imagined: { type: "string" } }),
+    { effort: "medium", maxTokens: 16000 },
   );
 }

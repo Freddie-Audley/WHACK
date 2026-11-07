@@ -52,7 +52,7 @@ export async function draw({ facts }) {
 You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} A drawing is 12 rows of 12 characters, "." white and "#" black. No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board.`,
     `Draw ${facts.length > 1 ? "all of this about home in one picture" : "this about home"}:
 ${facts.map((f) => `- ${f.category.label}: ${f.value}`).join("\n")}
-Also give "thought", said while drawing: how you are drawing it and what you worry they will make of it (e.g. "Two circles for our suns, though they may read eyes." or "Wavy lines for our wind, since wind is invisible."). And "after", said once the board is down: a dry remark about life back home (e.g. "We lean when we walk and call it posture.").`,
+Also give "thought", said just before drawing: what you are about to draw and how and what you worry they will make of it (e.g. "Two circles for our suns, though they may read eyes." or "Wavy lines for our wind, since wind is invisible."). And "after", said once the board is down: a dry remark about life back home (e.g. "We lean when we walk and call it posture.").`,
     {
       type: "object",
       properties: {

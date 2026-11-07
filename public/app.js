@@ -10,8 +10,10 @@ const q = new URLSearchParams(location.search);
 const N = Math.min(CATEGORIES.length, +q.get("n") || CATEGORIES.length);
 const TOTAL_MS = (+q.get("t") || 90) * 1000; // the whole encounter, from pressing the button
 const REPORT_MS = TOTAL_MS - 18000;          // the guesser stops guessing after this and writes home
-const INK_MS = 3500;                         // the drawing appears over this long, board already up
-const HOLD_MS = 5000;                        // how long the finished board stays up
+const INK_MS = 2000;                         // the drawing appears over this long, board already up
+const HOLD_MS = 3000;                        // how long the finished board stays up
+// Describer: time to read what it says it's about to draw, longer for longer lines.
+const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
 const PICTURES = 4;                          // the describer gets this many boards for the whole world
 const IDLE = ["Hello?", "They're thinking.", "Take your time.", "Is this thing on?"];
@@ -158,7 +160,7 @@ async function waitFor(pred, ms) {
   return false;
 }
 
-// Describer: mutter, put the board up, then draw on it while they watch. It stays up until lower().
+// Describer: say what it's about to draw, give them time to read it, put the board up, then draw on it while they watch. It stays up until lower().
 async function show() {
   const k = sent++;
   scene.pose = "drawing";
@@ -168,7 +170,7 @@ async function show() {
   const grid = cleanGrid(out.rows);
   log(`draw "${describeFacts(pictures[k])}" — ${out.note} / "${out.thought}" / "${out.after}"`);
   say(out.thought);
-  await sleep(1500);
+  await sleep(readMs(out.thought));
   scene.pose = "raised";
   document.body.classList.add("raised");
   await sleep(300);

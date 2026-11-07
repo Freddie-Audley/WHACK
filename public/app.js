@@ -105,10 +105,15 @@ async function send() {
     await untilStop(field.regrow());
   }
 
-  document.body.classList.add("flag");
-  await sleep(END_MS);
+  // Message over: clear the field and plant the finish flag, which tells laptop 2 to stop
+  // watching before the answer goes up on this screen.
+  field.abort();
+  await field.regrow();
+  log("planting the flag");
+  await field.plantFlag();
+  await sleep(END_MS / SPEED);
   field.halt();
-  document.body.classList.remove("flag", "send");
+  document.body.classList.remove("send");
   showReveal(sentence, designs);
   log("revealed");
 }

@@ -1,4 +1,6 @@
 // Direct calls to the Claude API from the page (desktop app or browser). Haiku, trying its best.
+import { RULES as LIMITS } from "./field.js";
+
 const MODEL = "claude-haiku-5-5";
 
 // The key comes from .env via the Tauri shell.
@@ -67,8 +69,8 @@ const text = (t) => ({ type: "text", text: t });
 const RULES = `The rules, which both of you know:
 - One field per word, in order. A field is cut fresh for each word.
 - A field is a wheat field seen from above at night, 160 wide and 100 tall, with (0,0) at the top left.
-- In each field the saucers can cut at most 3 strokes (each a straight line or an arc) and at most 2 circles, and set down at most 2 cows. Nothing else: no letters, digits or other shapes.
-- A line is a straight cut about 3 wide.
+- Every cut is the same thick path, about 3 wide, so fine detail is impossible. Within that, the saucers can cut as many straight lines, arcs and circles, and set down as many cows, as a word needs: up to ${LIMITS.strokes} lines and arcs together, ${LIMITS.circles} circles and ${LIMITS.cows} cows per field. Nothing else: no letters, digits or writing of any kind.
+- A line is a straight cut.
 - An arc is part of a ring: a centre, a radius from 6 to 45, and the compass angles it runs between, clockwise, where 0 is the top, 90 the right, 180 the bottom and 270 the left. So 120 to 240 is a smile, and 270 to 90 is a rainbow.
 - A circle is a filled disc or a ring, with a radius from 4 to 45.
 - A cow is a black-and-white cow seen from the side, about 20 wide and 15 tall, standing somewhere in the field facing left or right.`;
@@ -85,7 +87,7 @@ ${RULES}
 
 Your ${words.length} fields: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
 
-Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use simple pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave), arrows (three lines), pointing, sizes, counting, positions, and cows as animals, people, a pair or pointers. You don't have to use everything: fewer, bigger shapes read best. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
+Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use simple pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a wheel, an arc a smile, a moon or a wave, lines a house, a tree or a person), arrows (three lines), pointing, sizes, counting, positions, and cows as animals, people, a pair, a crowd or pointers. Use only as much as the word needs: fewer, bigger shapes read best. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
 Keep shapes inside the field and big enough to see from across a room.
 For each field also give "idea": a few words on what you mean it to show.`,
     {
@@ -135,7 +137,7 @@ export async function readFrames({ frames }) {
 - "fresh": a dark wheat field with no glowing marks and no flying saucer
 - "cutting": one or more flying saucers are over the field
 - "done": glowing lines, curves or circles, or cows, on the field, and no flying saucer anywhere
-- "end": a big chequered finish flag on white
+- "end": a big black-and-white chequered finish flag standing in the field
 - "other": anything else, or you can't tell
 Ignore everything around the screen.`));
   const out = await call(

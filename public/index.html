@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>First Contact</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; color: #1d1d3a; background: linear-gradient(135deg, var(--bg1, rgba(255,214,232,.25)), var(--bg2, rgba(201,228,255,.25))); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
+  .surface { display: none; position: fixed; top: 40px; bottom: 14px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
+  body.describe #stage, body.guess #stage { display: block; }
+  #stage { left: 14px; right: 14px; }
+  #stage canvas, #imagined canvas { display: block; }
+  #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
+  body.guess #stage { right: calc(50% + 7px); }
+  #imagined { left: calc(50% + 7px); right: 14px; }
+  body.guess #imagined { display: block; }
+
+  #speech, #imagine, #cam { transition: opacity .4s; }
+  body.raised #speech, body.raised #imagine, body.raised #cam { opacity: 0; pointer-events: none; }
+  .glass { background: rgba(255,255,255,.55); -webkit-backdrop-filter: blur(30px) saturate(170%); backdrop-filter: blur(30px) saturate(170%); border-radius: 10px; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
+  .title { font-size: 32px; font-weight: 500; }
+  .eyebrow { color: #1d1d3a; margin-bottom: 4px; }
+
+  /* Speech bubble, anchored above the ambassador's head by app.js */
+  #speech { position: fixed; left: 0; top: 0; max-width: 420px; padding: 14px 16px; transform: translate(-50%, -100%); display: none; }
+  #speech.show { display: block; }
+  #speech::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 16px; height: 16px; margin-left: -8px; background: inherit; -webkit-backdrop-filter: inherit; backdrop-filter: inherit; transform: rotate(45deg); border-radius: 3px; box-shadow: 2px 2px 3px rgba(40,30,80,.06); }
+
+  #imagine { position: fixed; right: 28px; top: 54px; width: 600px; padding: 14px; display: none; flex-direction: column; gap: 10px; }
+  body.describe #imagine, body.guess #imagine { display: flex; }
+  body.guess #imagine { right: auto; left: calc(50% + 21px); width: calc(50% - 49px); }
+  #tiles { display: flex; flex-direction: column; gap: 10px; }
+  .prop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .prop .label { color: #1d1d3a; margin-right: 4px; }
+  .chips { display: contents; }
+  .chip { padding: 5px 11px; border-radius: 999px; background: rgba(255,255,255,.35); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); color: #55546f; }
+  .chip.on { background: AccentColor; color: AccentColorText; box-shadow: 0 1px 4px rgba(40,30,80,.15), inset 0 1px 0 rgba(255,255,255,.35); }
+  .prop.fresh .chip.on { animation: pop .35s ease; }
+  @keyframes pop { from { transform: scale(.94); } to { transform: scale(1); } }
+
+  #cam { position: fixed; left: 28px; top: 54px; width: 360px; padding: 10px; display: none; }
+  body.guess #cam { display: block; }
+  #cam video { width: 100%; display: block; border-radius: 6px; transform: scaleX(-1); }
+  #preview { display: none; }
+
+  #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #start.hide { display: none; }
+  #card { padding: 24px 32px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  #card h1 { margin: 0; color: #000; }
+  #card p { margin: -10px 0 32px; color: #000; }
+  .row { display: flex; gap: 12px; align-items: center; }
+  button { font: inherit; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  #nokey { color: #c0392b; display: none; }
+</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body>
+<div id="drag" data-tauri-drag-region></div>
+<div id="stage" class="surface"></div>
+<div id="imagined" class="surface"></div>
+
+<div id="speech" class="glass"></div>
+
+<div id="imagine" class="glass">
+  <div class="eyebrow title" id="imtitle">What I'm imagining</div>
+  <div id="tiles"></div>
+</div>
+
+<div id="cam" class="glass">
+  <video id="video" playsinline muted></video>
+  <canvas id="preview" width="160" height="90"></canvas>
+</div>
+
+<div id="start">
+  <div id="card">
+    <h1 class="title">First Contact</h1>
+    <p>by whack_a_snake</p>
+    <div class="row">
+      <button id="startA">Describe my world</button>
+      <button id="startB">Guess their world</button>
+    </div>
+    <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
+  </div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

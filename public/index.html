@@ -20,23 +20,10 @@
   #imagined { left: calc(50% + 7px); right: 14px; }
   body.guess #imagined { display: block; }
 
-  #imagine, #cam { transition: opacity .4s; }
-  body.raised #imagine, body.raised #cam { opacity: 0; pointer-events: none; }
-  .glass { background: rgba(255,255,255,.55); -webkit-backdrop-filter: blur(30px) saturate(170%); backdrop-filter: blur(30px) saturate(170%); border-radius: 10px; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   .title { font-size: 32px; font-weight: 500; }
 
-  #imagine { position: fixed; right: 28px; top: 54px; max-width: 320px; padding: 12px 16px; display: none; flex-direction: column; gap: 6px; }
-  body.describe #imagine, body.guess #imagine { display: flex; }
-  body.guess #imagine { right: auto; left: calc(50% + 21px); }
-  #imtitle { color: #55546f; }
-  #facts { display: flex; flex-direction: column; gap: 4px; }
-  #facts:empty { display: none; }
-  .fact.fresh { animation: pop .35s ease; }
-  @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-
-  #cam { position: fixed; left: 28px; bottom: 28px; width: 220px; padding: 8px; display: none; }
-  body.guess #cam { display: block; }
-  #cam video { width: 100%; display: block; border-radius: 6px; transform: scaleX(-1); }
+  /* The webcam feed is only read by the peer sampler, never shown. Kept rendering (not display:none) so frames keep decoding. */
+  #video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   #preview { display: none; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -55,15 +42,8 @@
 <div id="stage" class="surface"></div>
 <div id="imagined" class="surface"></div>
 
-<div id="imagine" class="glass">
-  <div id="imtitle">What I'm imagining</div>
-  <div id="facts"></div>
-</div>
-
-<div id="cam" class="glass">
-  <video id="video" playsinline muted></video>
-  <canvas id="preview" width="160" height="90"></canvas>
-</div>
+<video id="video" playsinline muted></video>
+<canvas id="preview" width="160" height="90"></canvas>
 
 <div id="start">
   <div id="card">

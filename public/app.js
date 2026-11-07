@@ -1,5 +1,5 @@
 import { CATEGORIES, generateWorld } from "./worlds.js";
-import { renderBoard, cleanGrid, emptyGrid, W, H, SIZE } from "./board.js";
+import { renderBoard, cleanEmoji, W, H } from "./board.js";
 import { WebcamPeer } from "./peer.js";
 import { Scene, WorldView } from "./scene.js";
 import { draw, interpret, report, loadKey } from "./api.js";
@@ -25,27 +25,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const board = document.createElement("canvas");
 board.width = W; board.height = H;
-renderBoard(board, emptyGrid());
+renderBoard(board);
 let scene, imagined, peer;
 
-let sent = 0;            // describer: facts drawn so far
+let sent = 0;            // describer: facts shown so far
 const guesses = {};      // guesser: category id -> { value, seen, reasoning }
 const remaining = () => CATEGORIES.filter((c) => !(c.id in guesses));
 const describer = () => role === "a";
 
-// Known facts as sentences, in the order they landed, and (guesser) the imagined world.
-function renderFacts(freshId) {
-  const ids = describer() ? world.order.slice(0, sent) : Object.keys(guesses);
+// Guesser: rebuild the imagined world from the facts guessed so far.
+function showGuesses() {
   const known = {};
-  for (const id of ids) known[id] = describer() ? world.values[id] : guesses[id].value;
-  $("facts").innerHTML = ids.map((id) => {
-    const c = CATEGORIES.find((c) => c.id === id);
-    return `<div class="fact ${id === freshId ? "fresh" : ""}">${c.sentences[known[id]]}</div>`;
-  }).join("");
-  if (imagined) imagined.showWorld(known);
+  for (const id in guesses) known[id] = guesses[id].value;
+  imagined.showWorld(known);
 }
 
-// Describer: draw each fact, hold it up for a while, lower it, next.
+// Describer: pick an emoji for each fact, hold it up for a while, lower it, next.
 async function describe() {
   await sleep(1500);
   for (sent = 0; sent < N; ) {
@@ -54,19 +49,17 @@ async function describe() {
     const value = world.values[id];
     say("");
     scene.pose = "drawing";
-    renderBoard(board, emptyGrid()); scene.boardChanged();
+    renderBoard(board); scene.boardChanged();
     let out;
     try { out = await draw({ category, value, categories: CATEGORIES }); }
     catch (e) { log(`error: ${e.message}`); say("…"); await sleep(4000); continue; }
-    const grid = cleanGrid(out.rows);
-    log(`draw "${category.label}: ${value}" — ${out.note} / "${out.thought}"`);
+    const emoji = cleanEmoji(out.emoji);
+    log(`show ${emoji} for "${category.label}: ${value}" — ${out.note} / "${out.thought}"`);
     say(out.thought);
-    for (let i = 8; i <= SIZE * SIZE; i += 8) {
-      renderBoard(board, grid, i); scene.boardChanged();
-      await sleep(140);
-    }
+    await sleep(1500);
+    renderBoard(board, emoji); scene.boardChanged();
+    await sleep(800);
     sent++;
-    renderFacts(id);
     scene.pose = "raised";
     document.body.classList.add("raised");
     await sleep(1200);
@@ -89,7 +82,7 @@ async function readPeer() {
   guesses[out.category] = out;
   const c = CATEGORIES.find((c) => c.id === out.category);
   log(`see: ${out.seen} → ${c.label} = ${out.value} (${out.reasoning}) / "${out.thought}"`);
-  renderFacts(out.category);
+  showGuesses();
   say(out.thought);
   if (Object.keys(guesses).length >= N) await finish();
 }
@@ -134,12 +127,10 @@ async function start(r) {
   document.body.classList.add(describer() ? "describe" : "guess");
   document.body.style.setProperty("--bg1", `hsla(${world.hue * 360}, 80%, 80%, .25)`);
   document.body.style.setProperty("--bg2", `hsla(${(world.hue * 360 + 60) % 360}, 80%, 80%, .25)`);
-  $("imtitle").textContent = describer() ? "My world" : "Their world, so far";
   scene = new Scene($("stage"), describer() ? board : null, world.hue);
   scene.showWorld(world.values);
   if (!describer()) imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
   peer = new WebcamPeer($("video"), $("preview"));
-  renderFacts();
   if (describer()) describe();
   else { await peer.start(); setInterval(tick, 1000); }
 }

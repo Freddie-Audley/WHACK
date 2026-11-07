@@ -1,31 +1,19 @@
-// A 16x16 black-and-white pixel whiteboard. A drawing is 16 strings of 16 characters: "." empty, "#" black.
-export const SIZE = 16, W = 640, H = 640;
-export const PALETTE = { ".": null, "#": "#111" };
-const PX = W / SIZE;
+// A whiteboard showing one big emoji.
+export const W = 640, H = 640;
 
-export const emptyGrid = () => Array.from({ length: SIZE }, () => ".".repeat(SIZE));
-
-// Coerce whatever the model returned into exactly 16x16 known characters.
-export function cleanGrid(rows) {
-  const out = [];
-  for (let y = 0; y < SIZE; y++) {
-    const r = (rows?.[y] ?? "").padEnd(SIZE, ".").slice(0, SIZE);
-    out.push([...r].map((c) => (c in PALETTE ? c : ".")).join(""));
-  }
-  return out;
+// Coerce whatever the model returned into a single emoji (first grapheme).
+export function cleanEmoji(s) {
+  const first = [...new Intl.Segmenter().segment((s ?? "").trim())][0]?.segment;
+  return first || "❓";
 }
 
-// Draw the first `upTo` pixels (raster order) onto a white board.
-export function renderBoard(canvas, grid, upTo = SIZE * SIZE) {
+export function renderBoard(canvas, emoji = "") {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, W, H);
-  let n = 0;
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-    if (n++ >= upTo) return;
-    const col = PALETTE[grid[y][x]];
-    if (!col) continue;
-    ctx.fillStyle = col;
-    ctx.fillRect(x * PX + 1, y * PX + 1, PX - 2, PX - 2);
-  }
+  if (!emoji) return;
+  ctx.font = "420px 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, W / 2, H / 2 + 20);
 }

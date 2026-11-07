@@ -46,7 +46,6 @@
   #editor #wipe { grid-column: span 2; width: auto; }
   #pen-black { --ink: #111; }
   #pen-white { --ink: #fff; }
-  .editor-tools img { width: 42px; height: 42px; object-fit: contain; }
 
   .title { font-size: 40px; font-weight: 500; }
 
@@ -61,27 +60,26 @@
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
   #start.hide { display: none; }
-  #card { padding: 24px 32px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
-  #card h1 { margin: 0; color: #000; }
-  #card p { margin: -10px 0 32px; color: #000; }
-  .row { display: flex; gap: 12px; align-items: center; }
-  /* Until the code has loaded (three.js comes from a CDN) the buttons would do nothing, so they wait; the two
-     that need a key only appear once there is one. */
-  #roles { display: none; }
-  #startE { visibility: hidden; }
-  body.ready #startE { visibility: visible; }
-  body.ready.key #roles { display: flex; }
-  button { font: inherit; font-size: 17px; font-weight: 600; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
-  #nokey { color: #c0392b; display: none; }
+  #card { padding: 24px 32px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  #card h1 { margin: 0; }
+  #card p { margin: 2px 0 28px; font-size: 13px; color: #6b6b85; }
+  /* Two roles side by side, Earth the full width beneath. Until the code has loaded (three.js comes from a CDN)
+     the buttons would do nothing, so they wait; without a key the two that need one stay greyed out. */
+  #choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; visibility: hidden; }
+  #startE { grid-column: span 2; }
+  body.ready #choices { visibility: visible; }
+  body:not(.key) #startA, body:not(.key) #startB { opacity: .4; pointer-events: none; }
+  #snake { position: fixed; left: 0; bottom: 6px; width: 100%; height: 40px; pointer-events: none; }
+  button { font: inherit; font-size: 16px; font-weight: 500; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  #nokey { margin-top: 12px; color: #c0392b; display: none; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
     .editor-main { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
     #pixel-board-frame { flex: 0 0 auto; }
-    .editor-tools { grid-template-columns: repeat(4, 56px) 80px; gap: 8px; margin-left: 0; }
+    .editor-tools { grid-template-columns: repeat(2, 56px) 80px; gap: 8px; margin-left: 0; }
     #editor #wipe { grid-column: auto; width: 80px; }
     #editor .square-button { width: 56px; height: 56px; }
     #editor .pen { --m: 8px; }
-    .editor-tools img { width: 32px; height: 32px; }
   }
   @media (max-height: 600px) {
     #editor { --board: min(64vw, calc(100vh - 160px), 680px); }
@@ -97,7 +95,7 @@
     #pixel-board-frame { border-radius: 14px; }
     /* Just the board and Clear: a touch on a black pixel rubs out, anywhere else draws. */
     #editor { --board: min(calc(100vw - 32px), calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px), 680px); }
-    #editor .pen, #brush-tool, #fill-tool { display: none; }
+    #editor .pen { display: none; }
     .editor-tools { display: block; }
     #editor #wipe { width: auto; height: 48px; padding: 0 32px; }
   }
@@ -116,12 +114,6 @@
     <div class="editor-tools" aria-label="Pixel editor tools">
       <button id="pen-black" class="square-button pen" type="button" aria-label="Black pixels" aria-pressed="true"></button>
       <button id="pen-white" class="square-button pen" type="button" aria-label="White pixels" aria-pressed="false"></button>
-      <button id="brush-tool" class="square-button" type="button" aria-label="Brush" aria-pressed="true">
-        <img src="resources/paint_brush.png" alt="">
-      </button>
-      <button id="fill-tool" class="square-button" type="button" aria-label="Fill area" aria-pressed="false">
-        <img src="resources/paint_bucket.svg" alt="">
-      </button>
       <button id="wipe" class="square-button" type="button">Wipe</button>
     </div>
   </div>
@@ -140,14 +132,16 @@
   <div id="card">
     <h1 class="title">First Contact</h1>
     <p>by whack_a_snake</p>
-    <div class="row" id="roles">
+    <div id="choices">
       <button id="startA">Describe my world</button>
       <button id="startB">Guess their world</button>
+      <button id="startE">Contact from Earth</button>
     </div>
-    <button id="startE">Contact from Earth</button>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>
+  <svg id="snake" aria-hidden="true"></svg>
 </div>
+<script type="module" src="snake.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

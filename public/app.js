@@ -46,7 +46,6 @@ const editorGrid = emptyGrid();
 renderEditorBoard(editorCanvas, editorGrid);
 let scene, imagined, peer, t0;
 let editorPen = "#";
-let editorTool = "pen";
 let drawing = false;
 const touchOnly = matchMedia("(pointer: coarse)").matches; // phones: no tool buttons, just Clear
 
@@ -66,40 +65,9 @@ function paintPixel(event) {
   renderEditorBoard(editorCanvas, editorGrid);
 }
 
-function fillArea(x, y) {
-  const target = editorGrid[y][x];
-  if (target === editorPen) return;
-
-  const pixels = Array.from({ length: SIZE * SIZE }, () => false);
-  const stack = [y * SIZE + x];
-  pixels[stack[0]] = true;
-  while (stack.length) {
-    const index = stack.pop();
-    const px = index % SIZE, py = Math.floor(index / SIZE);
-    if (editorGrid[py][px] !== target) continue;
-
-    const row = [...editorGrid[py]];
-    row[px] = editorPen;
-    editorGrid[py] = row.join("");
-    for (const [nx, ny] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
-      const neighbor = ny * SIZE + nx;
-      if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && !pixels[neighbor] && editorGrid[ny][nx] === target) {
-        pixels[neighbor] = true;
-        stack.push(neighbor);
-      }
-    }
-  }
-  renderEditorBoard(editorCanvas, editorGrid);
-}
-
 editorCanvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
-  if (editorTool === "fill") {
-    const { x, y } = pixelAt(event);
-    fillArea(x, y);
-    return;
-  }
   if (touchOnly) { const { x, y } = pixelAt(event); editorPen = editorGrid[y][x] === "#" ? "." : "#"; }
   drawing = true;
   editorCanvas.setPointerCapture(event.pointerId);
@@ -115,12 +83,6 @@ function selectPen(color) {
   editorPen = color;
   $("pen-black").setAttribute("aria-pressed", String(color === "#"));
   $("pen-white").setAttribute("aria-pressed", String(color === "."));
-}
-
-function selectEditorTool(tool) {
-  editorTool = tool;
-  $("brush-tool").setAttribute("aria-pressed", String(tool === "pen"));
-  $("fill-tool").setAttribute("aria-pressed", String(tool === "fill"));
 }
 
 let sent = 0;            // describer: boards shown so far
@@ -336,8 +298,6 @@ addEventListener("keydown", (e) => {
   $("startE").onclick = () => earth();
   $("pen-black").onclick = () => selectPen("#");
   $("pen-white").onclick = () => selectPen(".");
-  $("brush-tool").onclick = () => selectEditorTool("pen");
-  $("fill-tool").onclick = () => selectEditorTool("fill");
   $("wipe").onclick = () => wipe();
   if (touchOnly) $("wipe").textContent = "Clear";
   document.body.classList.add("ready");

@@ -11,56 +11,77 @@
   body.running { background: #fff; }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
 
-  /* Laptop 1: one big emoji on white. */
-  #emoji { display: none; position: fixed; inset: 0; align-items: center; justify-content: center; font-size: min(62vh, 50vw); line-height: 1; font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
-  body.describe #emoji { display: flex; }
+  /* Laptop 1: the field, the finish flag, then the reveal. */
+  #field { display: none; position: fixed; inset: 0; width: 100%; height: 100%; }
+  body.send #field { display: block; }
+  #flag { display: none; position: fixed; inset: 0; background: #fff; align-items: center; justify-content: center; font-size: min(62vh, 50vw); line-height: 1; font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
+  body.flag #flag { display: flex; }
 
-  /* Pictures: laptop 1's reveal, laptop 2's guesses. Cross-fade between them. */
-  #picture { position: fixed; inset: 0; }
-  #picture img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 1.2s; }
-  #picture img.show { opacity: 1; }
-  body.revealed #emoji { display: none; }
+  /* The reveal (laptop 1) and the guess (laptop 2) share a layout: the words, then each field. */
+  .result { display: none; position: fixed; inset: 0; background: #fff; flex-direction: column; align-items: center; justify-content: center; gap: 36px; padding: 60px 40px 40px; }
+  body.revealed #reveal, body.read #guess { display: flex; }
+  .sentence { font-size: 46px; font-weight: 600; text-align: center; color: #111; max-width: 90%; }
+  .sentence .unknown { color: #ccc; }
+  .thought { margin-top: -26px; color: #888; font-style: italic; font-size: 16px; min-height: 22px; }
+  .tiles { --tw: 200px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; max-width: 95%; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 20px; color: #333; animation: pop .5s both; animation-delay: calc(var(--i, 0) * 140ms); }
+  .tile canvas, .tile img { width: var(--tw); height: calc(var(--tw) * .625); object-fit: cover; border-radius: 10px; box-shadow: 0 3px 14px rgba(0,0,0,.18); background: #0c1d14; }
+  @keyframes pop { from { opacity: 0; transform: translateY(14px) scale(.96); } }
 
-  /* Laptop 2: the emojis it has read, most recent on the right. */
-  #trail { position: fixed; left: 24px; right: 24px; bottom: 18px; text-align: right; white-space: nowrap; overflow: hidden; font-size: 22px; letter-spacing: 4px; direction: rtl; }
-  #trail span { direction: ltr; unicode-bidi: isolate; }
-
-  #status { position: fixed; left: 0; right: 0; top: 48px; text-align: center; color: #888; font-size: 16px; }
-  #problem { position: fixed; left: 10%; right: 10%; top: 74px; text-align: center; color: #c0392b; font-size: 14px; }
+  .pill { position: fixed; left: 50%; transform: translateX(-50%); padding: 5px 14px; border-radius: 999px; background: rgba(255,255,255,.88); white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; z-index: 5; }
+  .pill:empty { display: none; }
+  #status { top: 46px; color: #555; font-size: 16px; }
+  #problem { top: 82px; color: #c0392b; font-size: 14px; }
 
   /* The webcam feed is only read, never shown. Kept rendering (not display:none) so frames keep decoding. */
   #video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
   #start.hide { display: none; }
-  #card { padding: 24px 32px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  #card { padding: 20px 32px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
   #card h1 { margin: 0; color: #000; font-size: 32px; font-weight: 500; }
-  #card p { margin: -10px 0 32px; color: #000; }
-  .row { display: flex; gap: 12px; align-items: center; }
-  button { font: inherit; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  #card p { margin: -8px 0 14px; color: #000; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  button, input { font: inherit; padding: 11px 18px; border: 0; border-radius: 12px; color: #1d1d3a; background: rgba(255,255,255,.4); box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  button { cursor: pointer; }
+  input { width: 260px; outline: none; user-select: text; -webkit-user-select: text; background: rgba(255,255,255,.65); }
+  .hint { color: #666; font-size: 13px; }
   #nokey { color: #c0392b; display: none; }
 </style>
 </head>
 <body>
 <div id="drag" data-tauri-drag-region></div>
-<div id="picture"></div>
-<div id="emoji"></div>
-<div id="trail"></div>
-<div id="status"></div>
-<div id="problem"></div>
+
+<canvas id="field"></canvas>
+<div id="flag">🏁</div>
+
+<div id="reveal" class="result">
+  <div class="sentence" id="revealSentence"></div>
+  <div class="tiles" id="revealTiles"></div>
+</div>
+
+<div id="guess" class="result">
+  <div class="sentence" id="guessSentence"></div>
+  <div class="thought" id="guessThought"></div>
+  <div class="tiles" id="guessTiles"></div>
+</div>
+
+<div id="status" class="pill"></div>
+<div id="problem" class="pill"></div>
 
 <video id="video" playsinline muted></video>
 
 <div id="start">
   <div id="card">
     <h1>First Contact</h1>
-    <p>by whack_a_snake</p>
+    <p>crop circles, by whack_a_snake</p>
     <div class="row">
-      <button id="startA">Describe my world</button>
-      <button id="startB">Guess their world</button>
+      <input id="sentence" placeholder="We come in peace" maxlength="140" autocomplete="off" spellcheck="false">
+      <button id="startA">Send</button>
     </div>
+    <button id="startB">Read their message</button>
+    <div class="hint">Space ends a run</div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
-    <p style="margin: 8px 0 0; color: #666; font-size: 13px;">Space ends a run</p>
   </div>
 </div>
 <script type="module" src="app.js"></script>

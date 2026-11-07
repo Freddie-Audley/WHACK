@@ -62,150 +62,115 @@ const imageBlock = (dataUrl) => {
   return { type: "image", source: { type: "base64", media_type, data } };
 };
 
-const SVG_RULES = `Format: one <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"> element filling the whole canvas.
-Style: flat, minimalist shapes. Gradients are fine. No text, no <image>, no <foreignObject>, no <script>, no external references. Keep it under about 8000 characters.`;
+const text = (t) => ({ type: "text", text: t });
 
-const svgSchema = (extra) => ({
-  type: "object",
-  properties: { ...extra, svg: { type: "string" } },
-  required: [...Object.keys(extra), "svg"],
-  additionalProperties: false,
-});
+const RULES = `The rules, which both of you know:
+- One field per word, in order. A field is cut fresh for each word.
+- A field is a wheat field seen from above at night, 160 wide and 100 tall, with (0,0) at the top left.
+- In each field the saucers can cut at most 2 straight lines and at most 2 circles, and lower one cow. Nothing else: no letters, digits or other shapes.
+- A line is a straight path, about 3 wide. A circle is either a filled disc or a ring, with a radius from 5 to 45. The cow stands somewhere in the field, facing left or right.`;
 
-// Laptop 1, once per run: invent and paint a new world. Only laptop 1 ever sees it.
-export async function paintWorld({ seed }) {
+const num = { type: "number" };
+
+// Laptop 1, before the run: design one field per word.
+export async function designFields({ sentence, words }) {
   return call(
-    `You paint alien landscapes as SVG.`,
-    `Paint a landscape on an alien world nobody has seen before.
-Some inspiration (use, bend or ignore it): ${seed}.
-Give it a few bold, distinctive features someone could recognise from a description: colours, shapes, things in the sky, what the ground is, any life.
-${SVG_RULES}
-Also give a short private title.`,
-    svgSchema({ title: { type: "string" } }),
-    { effort: "medium", maxTokens: 16000 },
-  );
-}
+    `You are an alien. The only way you can talk to a stranger from another world is by cutting crop circles into a field from your flying saucers. The stranger watches the field from above and must work out your message.`,
+    `Your message: "${sentence}"
 
-const DESCRIBER = `You are standing in front of a white screen that can show exactly one emoji at a time, one per second. A stranger from another world watches it through a webcam. They have never seen your world and will paint what they think it looks like, updating their painting as each emoji arrives. You want their painting to match yours as closely as possible.`;
+${RULES}
 
-const EMOJI_RULES = `- Coloured squares and circles (🟪 🟦 🟧 🟩 ⬛ ⬜ 🟣 🔵 …) are good for colours. Arrows are fine for positions.
-- Repeating an important idea is fine, but never the same emoji twice in a row.
-- No flags, letters, digits or keycaps. Never use 🏁.`;
+Your ${words.length} fields: ${words.map((w, i) => `${i + 1}. ${w}`).join("  ")}
 
-const emojiList = { type: "array", items: { type: "string", description: "Exactly one emoji" } };
-
-// The secret world, as a picture if the webview could rasterise it, else as SVG source.
-const worldBlocks = (image, svg, label) => image
-  ? [{ type: "text", text: `${label}:` }, imageBlock(image)]
-  : [{ type: "text", text: `${label}, as SVG:\n${svg}` }];
-
-// Laptop 1, before the run: plan a whole sequence from the world alone. This is also the
-// fallback for whenever the webcam can't help.
-export async function planEmojis({ image, svg, count }) {
-  return call(
-    DESCRIBER,
-    [
-      ...worldBlocks(image, svg, "Your world"),
-      {
-        type: "text",
-        text: `Plan exactly ${count} emojis to show, in order.
-- Big picture first: sky colour, what the ground is, the biggest shapes. Then smaller things, then details and where things are.
-${EMOJI_RULES}
-Also give one sentence on your plan.`,
-      },
-    ],
-    {
-      type: "object",
-      properties: { plan: { type: "string" }, emojis: emojiList },
-      required: ["plan", "emojis"],
-      additionalProperties: false,
-    },
-    { effort: "high", maxTokens: 8000 },
-  );
-}
-
-// Laptop 1, during the run: look at the stranger's painting through its own webcam,
-// compare it with the real world, and pick the next emojis to fix what's most wrong.
-export async function adjustEmojis({ image, svg, view, shown, upcoming, count }) {
-  return call(
-    `${DESCRIBER}
-Your own webcam points at the stranger's laptop, so you can see how their painting is going.`,
-    [
-      ...worldBlocks(image, svg, "Your world"),
-      { type: "text", text: "Your webcam's view of the stranger's laptop right now:" },
-      imageBlock(view),
-      {
-        type: "text",
-        text: `The webcam view is their current painting of your world. The small row of emojis along its bottom edge is what they have read so far. The view may be skewed, blurry or partly cut off. If they haven't painted anything yet, it is just a white screen.
-
-Emojis you have shown so far, in order: ${shown.join(" ") || "(none yet)"}
-What you were going to show next: ${upcoming.join(" ") || "(nothing planned)"}
-
-They lag a few seconds behind, so the last few emojis you showed may not be in their painting yet.
-Compare their painting with your world. Then choose the next ${count} emojis, fixing the biggest difference first (a wrong colour, a missing or wrong big shape, something in the wrong place) before adding detail. If the painting already matches well, carry on with details from your plan.
-${EMOJI_RULES}
-Also give "seen": one short sentence on what their painting shows, and "fix": one short sentence on what you will correct.`,
-      },
-    ],
-    {
-      type: "object",
-      properties: { seen: { type: "string" }, fix: { type: "string" }, emojis: emojiList },
-      required: ["seen", "fix", "emojis"],
-      additionalProperties: false,
-    },
-    { effort: "medium", maxTokens: 4000 },
-  );
-}
-
-// Laptop 2: read a batch of webcam frames of laptop 1's screen, in order.
-export async function readFrames({ frames }) {
-  const content = [];
-  frames.forEach((f, i) => content.push({ type: "text", text: `Frame ${i + 1}:` }, imageBlock(f)));
-  content.push({
-    type: "text",
-    text: `These ${frames.length} webcam frames are in time order, about half a second apart. For each frame, say what the other laptop's screen shows:
-- "emoji": a white screen with one large emoji (give that emoji)
-- "blank": a white screen with nothing on it, or only small grey text
-- "other": a picture, a menu, or you can't make it out (give "" as the emoji)
-Ignore everything around the screen.`,
-  });
-  const out = await call(
-    `You read webcam photos of another laptop's screen. While it is talking, the screen is white with one large emoji in the middle.`,
-    content,
+Make every word as easy to guess as you can. Think about how the stranger will read each field together with the ones around it. Use pictures (a filled circle can be a sun, a head or a coin, a ring an eye or a mouth), arrows and pointing, sizes, counting, positions, and the cow as an animal, a person or a pointer. Leave a field empty only if nothing better fits. Use the same design whenever a word repeats.
+Keep shapes inside the field and big enough to see from across a room.
+For each field also give "idea": a few words on what you mean it to show.`,
     {
       type: "object",
       properties: {
-        frames: {
+        fields: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              kind: { type: "string", enum: ["emoji", "blank", "other"] },
-              emoji: { type: "string" },
+              word: { type: "string" },
+              idea: { type: "string" },
+              lines: {
+                type: "array",
+                items: { type: "object", properties: { x1: num, y1: num, x2: num, y2: num }, required: ["x1", "y1", "x2", "y2"], additionalProperties: false },
+              },
+              circles: {
+                type: "array",
+                items: { type: "object", properties: { x: num, y: num, r: num, filled: { type: "boolean" } }, required: ["x", "y", "r", "filled"], additionalProperties: false },
+              },
+              cow: {
+                type: "object",
+                properties: { use: { type: "boolean" }, x: num, y: num, facing: { type: "string", enum: ["left", "right"] } },
+                required: ["use", "x", "y", "facing"],
+                additionalProperties: false,
+              },
             },
-            required: ["kind", "emoji"],
+            required: ["word", "idea", "lines", "circles", "cow"],
             additionalProperties: false,
           },
         },
       },
+      required: ["fields"],
+      additionalProperties: false,
+    },
+    { effort: "high", maxTokens: 12000 },
+  );
+}
+
+// Laptop 2: sort a batch of webcam frames of laptop 1's screen, in order.
+export async function readFrames({ frames }) {
+  const content = [];
+  frames.forEach((f, i) => content.push(text(`Frame ${i + 1}:`), imageBlock(f)));
+  content.push(text(`These ${frames.length} webcam frames are in time order, about a second apart. For each frame, say what the other laptop's screen shows:
+- "fresh": a dark wheat field with no glowing marks and no flying saucer
+- "cutting": one or more flying saucers are over the field
+- "done": glowing lines, circles or a cow on the field, and no flying saucer anywhere
+- "end": a big chequered finish flag on white
+- "other": anything else, or you can't tell
+Ignore everything around the screen.`));
+  const out = await call(
+    `You read webcam photos of another laptop's screen, which shows a field seen from above where flying saucers cut crop circles.`,
+    content,
+    {
+      type: "object",
+      properties: {
+        frames: { type: "array", items: { type: "string", enum: ["fresh", "cutting", "done", "end", "other"] } },
+      },
       required: ["frames"],
       additionalProperties: false,
     },
-    { effort: "low", maxTokens: 2000 },
+    { effort: "low", maxTokens: 1000 },
   );
   return out.frames;
 }
 
-// Laptop 2: paint its idea of the other world from the emojis alone.
-export async function paintGuess({ emojis, previous }) {
+// Laptop 2: guess the message from the finished fields read so far (webcam photos).
+export async function guessSentence({ fields }) {
+  const content = [];
+  fields.forEach((f, i) => content.push(text(`Field ${i + 1}:`), imageBlock(f)));
+  content.push(text(`${RULES}
+
+These ${fields.length} photos were taken with your webcam pointed at a screen, so they may be skewed or blurry. Look only at the field.
+The message may not be finished yet.
+Guess one word per field, in order, so that together they make the most sensible message. Give exactly ${fields.length} words.
+Also give "thought": what you mutter to yourself, under 15 words, casual, first person.`));
   return call(
-    `A stranger from another world is trying to show you what their world looks like. They can only hold up one emoji per second. You paint what you imagine, as SVG.`,
-    `Emojis so far, in order: ${emojis.join(" ")}
-${previous ? `Your last painting, from fewer emojis, showed: ${previous}. Keep what still fits and change what doesn't.\n` : ""}
-Paint their world as you imagine it right now. Earlier emojis are probably the big picture, later ones the details.
-${SVG_RULES}
-Also give "imagined": one sentence describing what you painted.`,
-    svgSchema({ imagined: { type: "string" } }),
-    { effort: "low", maxTokens: 16000 },
+    `You are an alien. A stranger from another world is trying to tell you something, and the only way they can is by cutting crop circles into a field from their flying saucers.`,
+    content,
+    {
+      type: "object",
+      properties: {
+        words: { type: "array", items: { type: "string" } },
+        thought: { type: "string" },
+      },
+      required: ["words", "thought"],
+      additionalProperties: false,
+    },
+    { effort: "medium", maxTokens: 4000 },
   );
 }

@@ -1,20 +1,21 @@
-import { generateSeed } from "./worlds.js";
-import { cleanList, prepareSequence, collapseReadings, sanitiseSvg, svgUrl, svgToJpeg } from "./board.js";
+import { Field, normaliseDesign, finishedScene, drawScene, setSpeed } from "./field.js";
+import { splitWords, newTracker, trackFields } from "./message.js";
 import { WebcamPeer } from "./peer.js";
-import { paintWorld, planEmojis, adjustEmojis, readFrames, paintGuess, loadKey } from "./api.js";
+import { designFields, readFrames, guessSentence, loadKey } from "./api.js";
 
-// Laptop 1 ("a") paints a secret world and shows it to laptop 2 one emoji per second
-// on a white screen. Laptop 2 ("b") watches through its webcam and keeps repainting
-// what it imagines. Laptop 1 watches that painting through its own webcam and steers
-// its next emojis towards what's wrong. Space (or the end of the run) stops it, then
-// laptop 1 shows 🏁 and reveals the real world.
+// Laptop 1 ("a") is given a sentence and has its saucers cut one crop-circle field per
+// word, with at most 2 lines, 2 circles and a cow each. Laptop 2 ("b") watches through
+// its webcam, keeps a photo of each finished field, and guesses the words. Space (or the
+// last word) ends the run: laptop 1 shows 🏁 and reveals the sentence and every field.
 const q = new URLSearchParams(location.search);
-const COUNT = Math.max(1, +q.get("n") || 60); // emojis per run, one per second
-const SECOND = +q.get("ms") || 1000;
-const END = "🏁";                             // "that's all", read by laptop 2
-const END_MS = 2500;
-const FRAME_MS = 500;                         // laptop 2 samples twice per emoji
-const BATCH = 8;                              // frames per read call
+const SPEED = +q.get("speed") || 1; // for testing: everything on laptop 1 runs this much faster
+setSpeed(SPEED);
+const FRESH_MS = 1800;  // empty field before the saucers arrive
+const HOLD_MS = 6500;   // finished field held still for laptop 2 to read
+const END_MS = 4000;    // the finish flag
+const FRAME_MS = 1000;  // laptop 2 takes a webcam frame every second
+const BATCH = 6;        // frames per read call
+const END = "🏁";
 
 let role = "a";
 const $ = (id) => document.getElementById(id);
@@ -38,31 +39,17 @@ function working(label) {
 }
 const problem = (m = "") => { $("problem").textContent = m; };
 
-// Space ends the run early. Sleeps wake up as soon as it's pressed.
-let stopped = false, wake = () => {};
-const nap = (ms) => new Promise((r) => { const t = setTimeout(r, ms); wake = () => { clearTimeout(t); r(); }; });
+// Space ends the run early.
+let stopped = false, onStop;
+const stopSignal = new Promise((r) => { onStop = r; });
+const untilStop = (p) => Promise.race([p, stopSignal]);
+const wait = (ms) => untilStop(sleep(ms / SPEED));
 function stop() {
   if (stopped) return;
   stopped = true;
   log("stop pressed");
-  wake();
+  onStop();
 }
-
-function showPicture(svg) {
-  const holder = $("picture");
-  const old = [...holder.children];
-  const img = new Image();
-  img.onload = () => {
-    holder.append(img);
-    img.getBoundingClientRect();
-    img.classList.add("show");
-    setTimeout(() => old.forEach((o) => { URL.revokeObjectURL(o.src); o.remove(); }), 1400);
-  };
-  img.onerror = () => { log("error: picture failed to load"); problem("a picture failed to load"); };
-  img.src = svgUrl(svg);
-}
-
-// ---- Laptop 1 -------------------------------------------------------------
 
 async function retry(what, fn, tries = 3) {
   for (let i = 1; ; i++) {
@@ -76,134 +63,115 @@ async function retry(what, fn, tries = 3) {
   }
 }
 
-// Laptop 1's own webcam points at laptop 2's painting. Every few emojis it takes a look,
-// compares the painting with the real world, and puts corrections at the front of the
-// queue. The original plan stays underneath, so a failed look or no webcam just means
-// it carries on with the plan.
-const FIRST_LOOK = 12; // emojis shown before the first look (laptop 2 needs time to read and paint)
-const LOOK_EVERY = 8;  // at least this many emojis between looks
-const AHEAD = 10;      // emojis asked for per look
+function tile(media, word, i, animate = true) {
+  const t = document.createElement("div");
+  t.className = "tile";
+  t.style.setProperty("--i", i);
+  if (!animate) t.style.animation = "none";
+  const label = document.createElement("div");
+  label.textContent = word;
+  t.append(media, label);
+  return t;
+}
 
-async function describe() {
-  working("imagining a world…");
+// Bigger tiles for shorter messages.
+const tileWidth = (n) => `${n <= 4 ? 300 : n <= 8 ? 250 : n <= 15 ? 190 : 140}px`;
 
-  // Start the webcam now, so any permission prompt comes up while the world is painted.
-  let cam = null, camError = "", over = false;
-  const eye = new WebcamPeer($("video"));
-  const camOff = () => eye.video.srcObject?.getTracks().forEach((t) => t.stop());
-  eye.start()
-    .then(() => { if (over) return camOff(); cam = eye; log("webcam on, watching their painting"); })
-    .catch((e) => { camError = e.message || String(e); log(`error: webcam: ${camError}`); });
+// ---- Laptop 1 -------------------------------------------------------------
 
-  const seed = generateSeed();
-  let world;
+async function send() {
+  const sentence = $("sentence").value.trim() || $("sentence").placeholder;
+  const words = splitWords(sentence);
+  const field = new Field($("field"));
+  working("the aliens are planning their message…");
+
+  let designs;
   try {
-    world = await retry("painting the world", async () => {
-      const out = await paintWorld({ seed });
-      return { title: out.title, svg: sanitiseSvg(out.svg) };
-    });
-  } catch { over = true; camOff(); status("couldn't paint a world. Restart the app to try again."); return; }
-  log(`world: "${world.title}" from ${seed}`);
-
-  let image = null, sequence = [];
-  if (!stopped) {
-    working("deciding what to say…");
-    image = await svgToJpeg(world.svg);
-    if (!image) log("no raster in this webview, describing from the SVG source");
-    try {
-      const plan = await retry("planning the emojis", () => planEmojis({ image, svg: image ? null : world.svg, count: COUNT }));
-      sequence = prepareSequence(plan.emojis ?? [], COUNT, END);
-      log(`plan: ${plan.plan} — ${sequence.join(" ")}`);
-    } catch { over = true; camOff(); status("couldn't plan the emojis. Restart the app to try again."); return; }
-    if (!sequence.length) { over = true; camOff(); status("Claude gave no usable emojis. Restart the app to try again."); return; }
-  }
+    const out = await retry("designing the fields", () => designFields({ sentence, words }));
+    designs = words.map((word, i) => ({ word, idea: out.fields?.[i]?.idea ?? "", ...normaliseDesign(out.fields?.[i]) }));
+  } catch { status("couldn't design the fields. Restart the app to try again."); return; }
+  designs.forEach((d, i) => log(`field ${i + 1} "${d.word}": ${d.idea} — ${d.lines.length} lines, ${d.circles.length} circles${d.cow ? ", a cow" : ""}`));
   status("");
-  if (camError) problem(`no webcam, so not watching their painting (${camError})`);
 
-  const shown = [];
-  const base = sequence.slice(); // the original plan
-  let fresh = [];                // corrections from the latest look
-  const lastShown = () => shown[shown.length - 1];
-  const next = () => {
-    while (fresh.length || base.length) {
-      const e = fresh.length ? fresh.shift() : base.shift();
-      if (e !== lastShown()) return e;
-    }
-    return null;
-  };
-
-  let looking = false, lookedAt = -Infinity;
-  async function look() {
-    const view = cam.capture(1024);
-    if (!view) return;
-    looking = true;
-    lookedAt = shown.length;
-    try {
-      const out = await adjustEmojis({
-        image, svg: image ? null : world.svg, view,
-        shown: shown.slice(), upcoming: [...fresh, ...base].slice(0, AHEAD), count: AHEAD,
-      });
-      fresh = cleanList(out.emojis, END, lastShown());
-      log(`looked after ${lookedAt}: ${out.seen} / fix: ${out.fix} → ${fresh.join(" ")}`);
-    } catch (e) {
-      log(`error: look: ${e.message}`);
-    }
-    looking = false;
+  for (let i = 0; i < designs.length && !stopped; i++) {
+    await wait(FRESH_MS);
+    if (stopped) break;
+    log(`cutting "${designs[i].word}"`);
+    await untilStop(field.perform(designs[i]));
+    if (stopped) break;
+    await wait(HOLD_MS);
+    if (stopped || i === designs.length - 1) break;
+    await untilStop(field.regrow());
   }
 
-  const t0 = performance.now();
-  for (let i = 0; i < COUNT && !stopped; i++) {
-    const e = next();
-    if (!e) break;
-    $("emoji").textContent = e;
-    shown.push(e);
-    if (cam && !looking && shown.length >= FIRST_LOOK && shown.length - lookedAt >= LOOK_EVERY) look();
-    await nap(t0 + (i + 1) * SECOND - performance.now());
-  }
-  over = true;
-  camOff();
-  log(`shown: ${shown.join(" ")}`);
-
-  $("emoji").textContent = END;
+  document.body.classList.add("flag");
   await sleep(END_MS);
-  $("emoji").textContent = "";
-  document.body.classList.add("revealed");
-  showPicture(world.svg);
+  field.halt();
+  document.body.classList.remove("flag", "send");
+  showReveal(sentence, designs);
   log("revealed");
+}
+
+function showReveal(sentence, designs) {
+  $("revealSentence").textContent = sentence;
+  $("revealTiles").style.setProperty("--tw", tileWidth(designs.length));
+  $("revealTiles").replaceChildren(...designs.map((d, i) => {
+    const c = document.createElement("canvas");
+    c.width = 480; c.height = 300;
+    drawScene(c.getContext("2d"), 480, 300, finishedScene(d));
+    return tile(c, d.word, i);
+  }));
+  document.body.classList.add("revealed");
 }
 
 // ---- Laptop 2 -------------------------------------------------------------
 
 let peer, frameTimer;
 const frames = [];   // webcam frames not yet read
-const received = []; // emojis read so far, in order
-let last = "", ended = false;
-let drawing = false, drawn = 0, imagined = "";
+const fields = [];   // finished fields seen: { image, word }
+const tracker = newTracker();
+let ended = false, guessing = false, guessedFor = 0, thought = "";
 
-function showTrail() {
-  $("trail").innerHTML = "";
-  const span = document.createElement("span");
-  span.textContent = received.join("") + (ended ? END : "");
-  $("trail").append(span);
+function showGuess() {
+  const sentence = $("guessSentence");
+  sentence.replaceChildren();
+  fields.forEach((f, i) => {
+    if (i) sentence.append(" ");
+    const w = document.createElement("span");
+    w.textContent = f.word || "…";
+    if (!f.word) w.className = "unknown";
+    sentence.append(w);
+  });
+  if (ended) sentence.append(` ${END}`);
+  $("guessThought").textContent = thought;
+  $("guessTiles").style.setProperty("--tw", tileWidth(fields.length));
+  // Only the newest field pops in; the rest are redrawn in place.
+  const shown = $("guessTiles").children.length;
+  $("guessTiles").replaceChildren(...fields.map((f, i) => {
+    const img = new Image();
+    img.src = f.image;
+    return tile(img, f.word || "…", 0, i >= shown);
+  }));
 }
 
 async function readLoop() {
   while (!ended && !stopped) {
-    if (frames.length < BATCH) await nap(BATCH * FRAME_MS);
+    if (frames.length < BATCH) await untilStop(sleep(BATCH * FRAME_MS));
     if (stopped) break;
     if (!frames.length) continue;
     const batch = frames.splice(0, BATCH * 2);
     try {
-      const out = collapseReadings(await readFrames({ frames: batch }) ?? [], last, END);
+      const kinds = (await readFrames({ frames: batch })) ?? [];
       problem();
-      last = out.last;
-      if (out.added.length) {
-        received.push(...out.added);
-        log(`read ${out.added.join(" ")}`);
-        showTrail();
-        draw();
+      const out = trackFields(tracker, kinds, batch);
+      log(`frames: ${kinds.join(" ")}`);
+      if (out.found.length) {
+        fields.push(...out.found);
+        log(`field ${fields.length} finished`);
+        showGuess();
+        guess();
       }
-      if (out.ended) { log("saw the end flag"); break; }
+      if (out.ended) { log("saw the finish flag"); break; }
     } catch (e) {
       log(`error: read: ${e.message}`);
       problem(`reading the webcam failed: ${e.message}`);
@@ -212,27 +180,29 @@ async function readLoop() {
   finish();
 }
 
-let pictures = 0;
-async function draw() {
-  if (drawing) return;
-  drawing = true;
-  while (received.length > drawn) {
-    const emojis = received.slice();
-    if (!pictures) working("imagining their world…");
+async function guess() {
+  if (guessing) return;
+  guessing = true;
+  while (fields.length > guessedFor) {
+    const n = fields.length;
+    if (!guessedFor) working("reading their fields…");
     try {
-      const out = await paintGuess({ emojis, previous: imagined });
-      showPicture(sanitiseSvg(out.svg));
-      if (!pictures++) status("");
-      imagined = out.imagined;
-      log(`imagined from ${emojis.length}: ${out.imagined}`);
+      const out = await guessSentence({ fields: fields.slice(0, n).map((f) => f.image) });
+      const words = Array.isArray(out.words) ? out.words : [];
+      for (let i = 0; i < n; i++) fields[i].word = String(words[i] ?? "").trim() || "?";
+      thought = out.thought || "";
+      status("");
+      problem();
+      log(`guess: ${fields.slice(0, n).map((f) => f.word).join(" ")} / "${thought}"`);
     } catch (e) {
-      log(`error: paint guess: ${e.message}`);
-      problem(`painting failed: ${e.message}`);
+      log(`error: guess: ${e.message}`);
+      problem(`guessing failed: ${e.message}`);
       await sleep(2000);
     }
-    drawn = emojis.length;
+    guessedFor = n;
+    showGuess();
   }
-  drawing = false;
+  guessing = false;
 }
 
 function finish() {
@@ -240,17 +210,18 @@ function finish() {
   ended = true;
   clearInterval(frameTimer);
   peer?.video.srcObject?.getTracks().forEach((t) => t.stop());
-  showTrail();
-  if (!received.length) status("no emojis seen");
-  draw(); // one last painting with everything, if anything arrived since the last one
+  if (!fields.length) status("no fields seen");
+  else if (!guessing) status("");
+  showGuess();
+  guess(); // one last guess with every field, if any arrived since the last one
 }
 
-async function guess() {
+async function read() {
   working("watching…");
   peer = new WebcamPeer($("video"));
   try { await peer.start(); }
   catch (e) { log(`error: webcam: ${e.message}`); status("no webcam"); problem(e.message); return; }
-  frameTimer = setInterval(() => { const f = peer.capture(); if (f) frames.push(f); }, FRAME_MS);
+  frameTimer = setInterval(() => { const f = peer.capture(800); if (f) frames.push(f); }, FRAME_MS);
   readLoop();
 }
 
@@ -267,14 +238,18 @@ async function growWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
+let started = false;
 async function start(r) {
+  if (started) return;
+  started = true;
   role = r;
   await growWindow();
   $("start").classList.add("hide");
-  document.body.classList.add("running", role === "a" ? "describe" : "guess");
+  $("sentence").blur();
+  document.body.classList.add("running", role === "a" ? "send" : "read");
   addEventListener("keydown", (e) => { if (e.code === "Space" || e.code === "Escape") { e.preventDefault(); stop(); } });
-  if (role === "a") describe();
-  else guess();
+  if (role === "a") send();
+  else read();
 }
 
 const origErr = console.error.bind(console);
@@ -288,5 +263,7 @@ addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message ||
   if (!key) $("nokey").style.display = "block";
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
+  $("sentence").addEventListener("keydown", (e) => { if (e.key === "Enter") start("a"); });
+  $("sentence").focus();
   if (q.get("role")) start(q.get("role"));
 })();

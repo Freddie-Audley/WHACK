@@ -427,12 +427,14 @@ export class WorldView {
     }
     if (v.animals === "snakes") {
       const skin = flat(0x5f9e45), band = flat(0xe0c050), red = flat(0xd8434f);
-      const N = 16, gap = 0.3, R = 0.24, segGeo = new THREE.SphereGeometry(R, 7, 5);
+      const N = 16, R = 0.24, segGeo = new THREE.SphereGeometry(R, 7, 5);
+      const size = (k) => 1 - (k / N) * 0.7, gap = [0.3]; // how far behind the head each segment is: touching all the way down
+      for (let k = 1; k < N; k++) gap[k] = gap[k - 1] + R * (size(k - 1) + size(k)) * 0.85;
       for (let i = 0; i < 6; i++) {
         const snake = new THREE.Group(), segs = [];
         for (let k = 0; k < N; k++) { // tapering to the tail
           const seg = new THREE.Mesh(segGeo, k % 3 === 2 ? band : skin);
-          seg.scale.setScalar(1 - (k / N) * 0.7);
+          seg.scale.setScalar(size(k));
           snake.add(seg);
           segs.push(seg);
         }
@@ -460,7 +462,7 @@ export class WorldView {
           const T = 4 + (p % 2), u = ((t + p) / T) % 1;
           const H = -0.4 + 2.1 * (u < 0.08 ? u / 0.08 : u < 0.7 ? 1 : u < 0.76 ? 1 - (u - 0.7) / 0.06 : 0); // head height; down below the rim
           const sway = (y) => Math.max(0, y) * 0.2 * Math.sin(t * 2.2 + p - y);
-          segs.forEach((s, k) => { const y = H - (k + 1) * gap; s.position.set(hole.x + sway(y), y, hole.z); });
+          segs.forEach((s, k) => { const y = H - gap[k]; s.position.set(hole.x + sway(y), y, hole.z); });
           head.position.set(hole.x + sway(H), H, hole.z);
           head.rotation.set(0, -Math.PI / 2, -sway(H) * 0.6); // facing the camera
           flick(t);
@@ -471,7 +473,7 @@ export class WorldView {
           this.movers.push((t) => {
             const s = t * 0.9 + p, x = d * ((s % 32) - 16);
             const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : this.groundY(wx, z) + R * segs[k].scale.x;
-            segs.forEach((seg, k) => { const wx = x - d * (k + 1) * gap; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - (k + 1) * gap))); });
+            segs.forEach((seg, k) => { const wx = x - d * gap[k]; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - gap[k]))); });
             head.position.set(x, water ? 0.5 : this.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));
             head.rotation.set(0, (d > 0 ? 0 : Math.PI) - Math.atan(A * c * Math.cos(c * s)), 0);
             flick(t);

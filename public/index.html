@@ -38,10 +38,10 @@
   #pixel-board { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
   .editor-tools { grid-column: 3; grid-row: 1; justify-self: start; margin-left: 20px; display: grid; grid-template-columns: repeat(2, 68px); gap: 10px; }
   /* The selected tool gets a black outline. */
-  #editor .square-button { --back: rgba(255,255,255,.4); width: 68px; height: 68px; padding: 0; display: grid; place-items: center; background: var(--back); touch-action: manipulation; }
+  #editor .square-button { width: 68px; height: 68px; padding: 0; display: grid; place-items: center; touch-action: manipulation; }
   #editor .square-button[aria-pressed="true"] { box-shadow: 0 0 0 3px #111, 0 2px 8px rgba(40,30,80,.15); }
-  /* Colour buttons: a swatch inset in the button. */
-  #editor .pen { --m: 10px; padding: var(--m); background: linear-gradient(var(--ink), var(--ink)) content-box, linear-gradient(var(--back), var(--back)); }
+  /* Colour buttons: a round swatch inset in the button. */
+  #editor .pen { --m: 10px; background: radial-gradient(circle closest-side, var(--ink) calc(100% - var(--m) - .5px), var(--back) calc(100% - var(--m))); }
   /* Wipe sits with the tools, as wide as two of them. */
   #editor #wipe { grid-column: span 2; width: auto; }
   #pen-black { --ink: #111; }
@@ -57,20 +57,24 @@
   #seen { display: none; position: absolute; top: 8px; left: 8px; padding: 4px 10px; border-radius: 8px; background: #ff00ff; color: #fff; font-weight: 600; }
   body.spotted #cam { box-shadow: 0 0 0 4px #ff00ff; }
   body.spotted #seen { display: block; }
+  /* The processed crop (what the model reads), beside the webcam while a board is in view. */
+  #processed { position: fixed; left: 364px; bottom: 16px; height: 191px; display: none; z-index: 5; border-radius: 12px; background: #fff; box-shadow: 0 0 0 4px #ff00ff; }
+  body.spotted #processed[src] { display: block; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
   #start.hide { display: none; }
   #card { padding: 24px 32px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  #card h1 { margin: 0; }
-  #card p { margin: 2px 0 28px; font-size: 13px; color: #6b6b85; }
-  /* Two roles side by side, Earth the full width beneath. Until the code has loaded (three.js comes from a CDN)
-     the buttons would do nothing, so they wait; without a key the two that need one stay greyed out. */
-  #choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; visibility: hidden; }
-  #startE { grid-column: span 2; }
+  /* The title is on a sign the UFO in the snake's scene holds up (snake.js), which lines it up with this; the space
+     above is for the UFO. */
+  #card h1 { margin: 40px 0 48px; color: transparent; }
+  /* Until the code has loaded (three.js comes from a CDN) the buttons would do nothing, so they wait; without a
+     key the two that need one stay greyed out. */
+  #choices { display: flex; flex-direction: column; gap: 8px; width: max-content; visibility: hidden; } /* all as wide as the widest */
   body.ready #choices { visibility: visible; }
   body:not(.key) #startA, body:not(.key) #startB { opacity: .4; pointer-events: none; }
-  #snake { position: fixed; left: 0; bottom: 6px; width: 100%; height: 40px; pointer-events: none; }
-  button { font: inherit; font-size: 16px; font-weight: 500; padding: 12px 24px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,.4); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  #snakes { position: fixed; inset: 0; z-index: -1; }
+  /* Every button in the app: a frosted pill (or circle, when square). */
+  button { --back: rgba(255,255,255,.6); font: inherit; font-size: 16px; font-weight: 500; padding: 8px 18px; border: 0; border-radius: 999px; cursor: pointer; background: var(--back); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
   #nokey { margin-top: 12px; color: #c0392b; display: none; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
@@ -89,9 +93,9 @@
   }
   /* Phones: Earth fills the whole screen; the board and its buttons stay clear of the status bar and home bar. */
   @media (pointer: coarse) {
-    body.earth #stage { inset: 0; border-radius: 0; box-shadow: none; }
+    /* iOS home-screen apps report a screen shorter by the status bar, which left a white strip at the bottom. */
+    body.earth #stage { inset: 0 0 auto; height: calc(100% + env(safe-area-inset-top)); border-radius: 0; box-shadow: none; }
     #editor { inset: calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px); }
-    button { border-radius: 22px; }
     #pixel-board-frame { border-radius: 14px; }
     /* Just the board and Clear: a touch on a black pixel rubs out, anywhere else draws. */
     #editor { --board: min(calc(100vw - 32px), calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px), 680px); }
@@ -127,11 +131,11 @@
   </div>
   <canvas id="preview" width="160" height="90"></canvas>
 </div>
+<img id="processed" alt="What the agent sees">
 
 <div id="start">
   <div id="card">
     <h1 class="title">First Contact</h1>
-    <p>by whack_a_snake</p>
     <div id="choices">
       <button id="startA">Describe my world</button>
       <button id="startB">Guess their world</button>
@@ -139,7 +143,6 @@
     </div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>
-  <svg id="snake" aria-hidden="true"></svg>
 </div>
 <script type="module" src="snake.js"></script>
 <script type="module" src="app.js"></script>

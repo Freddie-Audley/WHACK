@@ -161,6 +161,7 @@ async function describe() {
 // Guesser: their board is up. Keep reading it as the drawing grows, thinking aloud and changing
 // the imagined world as the reading changes; commit whatever was last understood when it comes down.
 async function readBoard() {
+  $("processed").removeAttribute("src"); // nothing stale from the last board
   document.body.classList.add("spotted");
   const falls = peer.falls, down = () => peer.falls !== falls; // the board has gone down since it came up
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
@@ -168,7 +169,9 @@ async function readBoard() {
   let reading = null;
   while (!closing && !down()) {
     try {
-      const out = await interpret({ image: peer.capture(), categories: CATEGORIES, believed: guesses, previous: reading });
+      const image = peer.capture();
+      $("processed").src = image; // shown beside the webcam: exactly what the model is given
+      const out = await interpret({ image, categories: CATEGORIES, believed: guesses, previous: reading });
       const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
       const changed = !reading || key(reading) !== key(out);
       log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} / "${out.thought}"`);
@@ -219,16 +222,19 @@ async function growWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
-// Back to the menu: shrink to the start window and begin afresh.
-async function menu() {
+// The start window's size. Every load shrinks back to it, so a reload (Cmd+R) mid-game lands on the menu as R does.
+async function shrinkWindow() {
   const t = window.__TAURI__;
+  if (!t) return;
   try {
-    const win = t?.window.getCurrentWindow();
-    await win?.setSize(new t.dpi.LogicalSize(520, 340));
-    await win?.center();
+    const win = t.window.getCurrentWindow();
+    await win.setSize(new t.dpi.LogicalSize(520, 460));
+    await win.center();
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
-  location.reload();
 }
+
+// Back to the menu: begin afresh (the reload shrinks the window).
+function menu() { location.reload(); }
 
 // Wipe (or Enter): the board goes down (so the guesser settles on what it saw), is wiped, and comes back up clean.
 let wiping = false;
@@ -289,7 +295,16 @@ addEventListener("keydown", (e) => {
 });
 
 (async () => {
-  if (phoneApp) earth();
+  if (phoneApp) earth(); else shrinkWindow();
+  // TEMP: report the phone's screen sizes to the `npm run phone` terminal, to chase the white bar.
+  setTimeout(() => {
+    const p = document.createElement("div");
+    p.style.cssText = "position:fixed;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)";
+    document.body.append(p);
+    const cs = getComputedStyle(p), st = $("stage").getBoundingClientRect();
+    fetch(`debug-v2?standalone=${phoneApp}&inner=${innerWidth}x${innerHeight}&screen=${screen.width}x${screen.height}&html=${document.documentElement.clientHeight}&stage=${st.top}..${st.bottom}&safe=${cs.paddingTop},${cs.paddingBottom}`);
+    p.remove();
+  }, 1500);
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (key) document.body.classList.add("key"); // without one only Contact from Earth works

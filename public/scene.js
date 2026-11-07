@@ -23,7 +23,6 @@ const PALETTES = [
 export const EARTH_COLOURS = { sky: 0x9fd0f2, ground: 0x6fae4f, leaf: 0x2f7d3a, rock: 0x8a8f96 };
 const TRUNK = 0x7a5a3e;
 
-const DOWN = [0, -9, 0]; // gravity, for falling rocks
 const gust = (t) => 0.5 + 0.5 * Math.sin(t * 0.8) * Math.sin(t * 0.31 + 1);
 
 const shade = (m) => { m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
@@ -79,36 +78,6 @@ export class WorldView {
     this.renderer.setSize(w, h);
   }
 
-  // A rock that obeys the world's gravity: rests, falls and bounces, lifts off, rolls sideways, or tumbles freely.
-  // `home` places it afresh; the first few seconds are simulated up front so rocks start out of step.
-  rock(mesh, r, g, home, { respawnWhenResting = false } = {}) {
-    const p = mesh.position, vel = new THREE.Vector3();
-    const free = !g[0] && !g[1], grounded = !free && g[1] <= 0;
-    let rest = 0;
-    const reset = () => { home(p, vel); rest = 0; if (free) vel.set(rand(-0.4, 0.4), rand(-0.25, 0.25), rand(-0.25, 0.25)); };
-    const step = () => {
-      vel.x += g[0] * DT; vel.y += g[1] * DT; vel.z += g[2] * DT;
-      p.addScaledVector(vel, DT);
-      let onFloor = false;
-      if (grounded) {
-        const floor = this.groundY(p.x, p.z) + r * 0.8;
-        if (p.y <= floor + 0.001) {
-          onFloor = true;
-          p.y = floor;
-          vel.y = vel.y < -1.5 ? -vel.y * 0.35 : 0;
-          vel.x *= 0.97; vel.z *= 0.97;
-        }
-      }
-      mesh.rotation.z -= vel.x * DT / r;
-      mesh.rotation.x += vel.z * DT / r + (onFloor ? 0 : DT * 0.8);
-      if (respawnWhenResting && onFloor && vel.length() < 0.05 && (rest += DT) > 2.5) reset();
-      if (p.y > 16 || p.y < -1 || Math.abs(p.x) > 17 || p.z > 3 || p.z < -22) reset();
-    };
-    reset();
-    for (let i = rand(0, 500) | 0; i--;) step();
-    return step;
-  }
-
   // Rebuild the backdrop from facts {suns, wind, animals, terrain, weather}. An unknown fact leaves its
   // part of the world white: no facts at all is a blank white void, and each fact paints its own piece in.
   // Palette, tree shapes, moons and rings are random (per view), so no two worlds look the same.
@@ -136,7 +105,7 @@ export class WorldView {
     this.sun.intensity = v.suns === "no sun" ? 0.7 : 2.0;
     this.sun.color.set(v.suns === "no sun" ? 0xb8c4ff : 0xfff4d6);
 
-    // Ground: gently uneven unless flat, water or pitted (or not yet known); always level near the camera.
+    // Ground: gently uneven unless flat or water (or not yet known); always level near the camera.
     reseed(1);
     const amp = v.terrain === "mountains" ? 0.35 : 0;
     this.groundY = (x, z) => {
@@ -161,18 +130,6 @@ export class WorldView {
       const m = add(new THREE.Mesh(new THREE.ConeGeometry(rand(3, 6), hgt, (rand(5, 8) | 0)), flat(new THREE.Color(i % 2 ? P.rock : P.leaf).lerp(sky, 0.35))));
       m.position.set(x, hgt / 2 - 0.5, z);
       m.rotation.y = rand(0, 6);
-    }
-    const holes = []; // where the holes are, so snakes can live in them
-    if (v.terrain === "holes") {
-      const rim = flat(new THREE.Color(P.ground).multiplyScalar(0.8)), pit = flat(0x2a2540);
-      for (let i = 0; i < 30; i++) {
-        const r = rand(0.5, 1.4), x = rand(-13, 13), z = rand(-13, -1);
-        holes.push({ x, z });
-        const h = add(new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.8, 0.5, 9), pit));
-        h.position.set(x, -0.24, z);
-        const ring = add(new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.1, 5, 12), rim));
-        ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.02, z);
-      }
     }
     if (v.terrain === "water") for (let i = 0; i < 20; i++) {
       const r = add(new THREE.Mesh(new THREE.TorusGeometry(rand(0.4, 1.2), 0.03, 4, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })), false);
@@ -228,7 +185,7 @@ export class WorldView {
 
     // Animals, and how each copes with the terrain and the wind. On water: cows swim up to their bellies, snails
     // float shell-up, fish leap, octopuses peek out, snakes swim with their heads up. On land: fish flop about gasping,
-    // and octopuses wear fishbowls. In holes, snakes pop up, sway, and duck back down.
+    // and octopuses wear fishbowls.
     // In a gale the birds flap flat out and still get blown backwards.
     reseed(5);
     const dark = flat(0x3a3560), white = flat(0xffffff);
@@ -456,29 +413,16 @@ export class WorldView {
         snake.add(head);
         add(snake);
         const p = rand(0, 20), flick = (t) => { tongue.scale.x = Math.sin(t * 1.3 + p) > 0.5 ? Math.abs(Math.sin(t * 25)) : 0.01; };
-        const hole = holes.length ? holes.splice((rng() * holes.length) | 0, 1)[0] : null;
-        if (hole) this.movers.push((t) => {
-          // Pops up out of its hole, sways at whoever is watching, then ducks back down.
-          const T = 4 + (p % 2), u = ((t + p) / T) % 1;
-          const H = -0.4 + 2.1 * (u < 0.08 ? u / 0.08 : u < 0.7 ? 1 : u < 0.76 ? 1 - (u - 0.7) / 0.06 : 0); // head height; down below the rim
-          const sway = (y) => Math.max(0, y) * 0.2 * Math.sin(t * 2.2 + p - y);
-          segs.forEach((s, k) => { const y = H - gap[k]; s.position.set(hole.x + sway(y), y, hole.z); });
-          head.position.set(hole.x + sway(H), H, hole.z);
-          head.rotation.set(0, -Math.PI / 2, -sway(H) * 0.6); // facing the camera
+        // Slithers along, its body following the same S-shaped path its head took; in water, head up, swimming.
+        const z = rand(-12, -3), d = rng() < 0.5 ? 1 : -1, A = 0.35, c = 1.6;
+        this.movers.push((t) => {
+          const s = t * 0.9 + p, x = d * ((s % 32) - 16);
+          const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : this.groundY(wx, z) + R * segs[k].scale.x;
+          segs.forEach((seg, k) => { const wx = x - d * gap[k]; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - gap[k]))); });
+          head.position.set(x, water ? 0.5 : this.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));
+          head.rotation.set(0, (d > 0 ? 0 : Math.PI) - Math.atan(A * c * Math.cos(c * s)), 0);
           flick(t);
         });
-        else {
-          // Slithers along, its body following the same S-shaped path its head took; in water, head up, swimming.
-          const z = rand(-12, -3), d = rng() < 0.5 ? 1 : -1, A = 0.35, c = 1.6;
-          this.movers.push((t) => {
-            const s = t * 0.9 + p, x = d * ((s % 32) - 16);
-            const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : this.groundY(wx, z) + R * segs[k].scale.x;
-            segs.forEach((seg, k) => { const wx = x - d * gap[k]; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - gap[k]))); });
-            head.position.set(x, water ? 0.5 : this.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));
-            head.rotation.set(0, (d > 0 ? 0 : Math.PI) - Math.atan(A * c * Math.cos(c * s)), 0);
-            flick(t);
-          });
-        }
       }
     }
 
@@ -504,11 +448,6 @@ export class WorldView {
         rain.geometry.attributes.position.needsUpdate = true;
       });
     }
-    if (v.weather === "rocks") for (let i = 0; i < 24; i++) {
-      const r = rand(0.4, 1.1);
-      const m = add(new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), flat(0x8c8498)));
-      this.movers.push(this.rock(m, r, DOWN, (p, vel) => { p.set(rand(-12, 12), rand(12, 18), rand(-12, -2)); vel.set(rand(-0.5, 0.5), 0, 0); }, { respawnWhenResting: true }));
-    }
     if (v.weather === "snow") {
       const count = 600, pos = new Float32Array(count * 3);
       for (let i = 0; i < count; i++) pos.set([rand(-18, 18), rand(0, 14), rand(-18, 4)], i * 3);
@@ -519,6 +458,25 @@ export class WorldView {
         for (let i = 0; i < count; i++) { a.array[i * 3 + 1] = (a.array[i * 3 + 1] - 0.018 + 14) % 14; a.array[i * 3] += Math.sin(t * 0.8 + i) * 0.006; }
         a.needsUpdate = true;
       });
+    }
+    // At night, little lights drift about low over the ground, each glowing and fading in its own time.
+    reseed(8);
+    if (v.suns === "no sun") {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const g = c.getContext("2d"), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, "rgba(255,255,220,1)"); grad.addColorStop(0.2, "rgba(255,240,150,.8)"); grad.addColorStop(1, "rgba(255,220,100,0)");
+      g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+      const glow = new THREE.CanvasTexture(c);
+      for (let i = 0; i < 40; i++) {
+        const light = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })), false);
+        light.scale.setScalar(rand(0.25, 0.45));
+        const x = rand(-12, 12), y = rand(0.4, 3.5), z = rand(-14, 2), p = rand(0, 20), f = rand(0.3, 0.7);
+        this.movers.push((t) => {
+          light.position.set(x + 1.5 * Math.sin(t * f * 0.5 + p), y + 0.5 * Math.sin(t * f + p * 2), z + 1.2 * Math.cos(t * f * 0.4 + p));
+          light.material.opacity = 0.25 + 0.75 * Math.max(0, Math.sin(t * f * 2 + p));
+        });
+      }
     }
     rng = Math.random; // movers that respawn at run time, and the ambassador, stay properly random
   }

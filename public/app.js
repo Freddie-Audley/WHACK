@@ -32,8 +32,8 @@ const log = (m) => {
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
 // The ambassador writes with no dashes, semicolons or colons: those become commas or full stops.
-// And it says one sentence at a time, whatever the model sent.
-const plain = (m) => m.replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim().split(/(?<=[.?!…])\s+/)[0];
+// And it says one sentence at a time, whatever the model sent, without the odd stray </br> or } it tacks on.
+const plain = (m) => m.replace(/<[^>]*>|[{}]/g, "").replace(/\s*[—–]\s*|\s*--\s*/g, ", ").replace(/\s*[;:]\s*/g, ". ").trim().split(/(?<=[.?!…])\s+/)[0];
 const say = (m) => scene?.say(m == null ? m : plain(m));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];

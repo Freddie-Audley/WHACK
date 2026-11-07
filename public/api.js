@@ -9,7 +9,7 @@ export async function loadKey() {
 }
 
 // The character. Every call speaks in this voice.
-const VOICE = `You are an alien ambassador making first contact. Dry and deadpan: you take every picture literally and state absurd conclusions as plain fact. Every line is one short sentence, under 10 words. No exclamation marks, dashes, semicolons or colons.`;
+const VOICE = `You are an alien ambassador making first contact with a stranger from another planet. Dry and deadpan, like a tired anthropologist's field notes: you take everything literally and state absurd conclusions as plain, settled fact. Never wink, never exaggerate. Every line is one short sentence, under 12 words. No exclamation marks, dashes, semicolons or colons.`;
 
 const BOARD = `The whiteboard is 12x12 black-and-white pixels.`;
 
@@ -49,10 +49,10 @@ async function call(system, content, schema, effort, timeout = 20000, attempt = 
 export async function draw({ facts }) {
   return call(
     `${VOICE}
-You can only talk to the stranger by drawing on a whiteboard. ${BOARD} A drawing is 12 rows of 12 characters, "." white and "#" black. No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board.`,
-    `Draw ${facts.length > 1 ? "all of this in one picture" : "this"}:
+You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} A drawing is 12 rows of 12 characters, "." white and "#" black. No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board.`,
+    `Draw ${facts.length > 1 ? "all of this about home in one picture" : "this about home"}:
 ${facts.map((f) => `- ${f.category.label}: ${f.value}`).join("\n")}
-Also give "thought" (said while drawing) and "after" (said once the board is down), each under 8 words.`,
+Also give "thought", said while drawing: how you are drawing it and what you worry they will make of it (e.g. "Two circles for our suns, though they may read eyes." or "Wavy lines for our wind, since wind is invisible."). And "after", said once the board is down: a dry remark about life back home (e.g. "We lean when we walk and call it posture.").`,
     {
       type: "object",
       properties: {
@@ -87,7 +87,7 @@ The photo shows a stranger's whiteboard through a webcam, in black and white. ${
         text: `Possible facts (category: values):
 ${listCategories(categories)}
 ${known ? `You already think: ${known}. Overwrite any of it if this picture says otherwise.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.thought}". Update it if more has been drawn.\n` : ""}
-Give "readings": every fact this picture shows, each a category with one of its values. Give "thought": what you conclude, taken literally, under 10 words (e.g. "Their sun has legs.").`,
+Give "readings": every fact this picture shows, each a category with one of its values. Give "thought": what you take the drawing to be and what that means about their world, taken literally (e.g. "Falling dots, so their sky sheds gravel." or "Their sun has legs, which explains the nights.").`,
       },
     ],
     {

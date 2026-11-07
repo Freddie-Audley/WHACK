@@ -23,8 +23,19 @@ const log = (m) => {
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
 };
-const status = (m) => { $("status").textContent = m; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// What the laptop is doing (with a seconds counter while it waits on Claude), and what went wrong.
+let ticker = null;
+const status = (m) => { clearInterval(ticker); $("status").textContent = m; };
+function working(label) {
+  const t0 = Date.now();
+  status("");
+  const show = () => { $("status").textContent = `${label} ${Math.round((Date.now() - t0) / 1000)}s`; };
+  show();
+  ticker = setInterval(show, 1000);
+}
+const problem = (m = "") => { $("problem").textContent = m; };
 
 // Space ends the run early. Sleeps wake up as soon as it's pressed.
 let stopped = false, wake = () => {};
@@ -46,7 +57,7 @@ function showPicture(svg) {
     img.classList.add("show");
     setTimeout(() => old.forEach((o) => { URL.revokeObjectURL(o.src); o.remove(); }), 1400);
   };
-  img.onerror = () => log("error: picture failed to load");
+  img.onerror = () => { log("error: picture failed to load"); problem("a picture failed to load"); };
   img.src = svgUrl(svg);
 }
 
@@ -54,33 +65,39 @@ function showPicture(svg) {
 
 async function retry(what, fn, tries = 3) {
   for (let i = 1; ; i++) {
-    try { return await fn(); }
-    catch (e) { log(`error: ${what}: ${e.message}`); if (i >= tries) throw e; await sleep(1500); }
+    try { const out = await fn(); problem(); return out; }
+    catch (e) {
+      log(`error: ${what}: ${e.message}`);
+      problem(`${what} failed: ${e.message}${i < tries ? " (trying again)" : ""}`);
+      if (i >= tries) throw e;
+      await sleep(1500);
+    }
   }
 }
 
 async function describe() {
-  status("imagining a world…");
+  working("imagining a world…");
   const seed = generateSeed();
   let world;
   try {
-    world = await retry("paint", async () => {
+    world = await retry("painting the world", async () => {
       const out = await paintWorld({ seed });
       return { title: out.title, svg: sanitiseSvg(out.svg) };
     });
-  } catch { status("couldn't paint a world, restart to try again"); return; }
+  } catch { status("couldn't paint a world. Restart the app to try again."); return; }
   log(`world: "${world.title}" from ${seed}`);
 
   let sequence = [];
   if (!stopped) {
-    status("deciding what to say…");
+    working("deciding what to say…");
     const image = await svgToJpeg(world.svg);
     if (!image) log("no raster in this webview, describing from the SVG source");
     try {
-      const plan = await retry("plan", () => planEmojis({ image, svg: image ? null : world.svg, count: COUNT }));
-      sequence = prepareSequence(plan.emojis, COUNT, END);
+      const plan = await retry("planning the emojis", () => planEmojis({ image, svg: image ? null : world.svg, count: COUNT }));
+      sequence = prepareSequence(plan.emojis ?? [], COUNT, END);
       log(`plan: ${plan.plan} — ${sequence.join(" ")}`);
-    } catch { status("couldn't plan the emojis"); }
+    } catch { status("couldn't plan the emojis. Restart the app to try again."); return; }
+    if (!sequence.length) { status("Claude gave no usable emojis. Restart the app to try again."); return; }
   }
   status("");
 
@@ -119,35 +136,41 @@ async function readLoop() {
     if (stopped) break;
     if (!frames.length) continue;
     const batch = frames.splice(0, BATCH * 2);
-    let readings;
-    try { readings = await readFrames({ frames: batch }); }
-    catch (e) { log(`error: read: ${e.message}`); continue; }
-    const out = collapseReadings(readings, last, END);
-    last = out.last;
-    if (out.added.length) {
-      received.push(...out.added);
-      log(`read ${out.added.join(" ")}`);
-      status("");
-      showTrail();
-      draw();
+    try {
+      const out = collapseReadings(await readFrames({ frames: batch }) ?? [], last, END);
+      problem();
+      last = out.last;
+      if (out.added.length) {
+        received.push(...out.added);
+        log(`read ${out.added.join(" ")}`);
+        showTrail();
+        draw();
+      }
+      if (out.ended) { log("saw the end flag"); break; }
+    } catch (e) {
+      log(`error: read: ${e.message}`);
+      problem(`reading the webcam failed: ${e.message}`);
     }
-    if (out.ended) { log("saw the end flag"); break; }
   }
   finish();
 }
 
+let pictures = 0;
 async function draw() {
   if (drawing) return;
   drawing = true;
   while (received.length > drawn) {
     const emojis = received.slice();
+    if (!pictures) working("imagining their world…");
     try {
       const out = await paintGuess({ emojis, previous: imagined });
       showPicture(sanitiseSvg(out.svg));
+      if (!pictures++) status("");
       imagined = out.imagined;
       log(`imagined from ${emojis.length}: ${out.imagined}`);
     } catch (e) {
       log(`error: paint guess: ${e.message}`);
+      problem(`painting failed: ${e.message}`);
       await sleep(2000);
     }
     drawn = emojis.length;
@@ -161,15 +184,15 @@ function finish() {
   clearInterval(frameTimer);
   peer?.video.srcObject?.getTracks().forEach((t) => t.stop());
   showTrail();
-  if (!received.length) status("nothing seen");
+  if (!received.length) status("no emojis seen");
   draw(); // one last painting with everything, if anything arrived since the last one
 }
 
 async function guess() {
-  status("watching…");
+  working("watching…");
   peer = new WebcamPeer($("video"));
   try { await peer.start(); }
-  catch (e) { log(`error: webcam: ${e.message}`); status("no webcam"); return; }
+  catch (e) { log(`error: webcam: ${e.message}`); status("no webcam"); problem(e.message); return; }
   frameTimer = setInterval(() => { const f = peer.capture(); if (f) frames.push(f); }, FRAME_MS);
   readLoop();
 }

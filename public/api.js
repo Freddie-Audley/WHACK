@@ -8,35 +8,53 @@ export async function loadKey() {
   return apiKey;
 }
 
+const TIMEOUT_MS = 120000; // a request that hangs gets cut off and retried instead of stalling the run
+
 async function call(system, content, schema, { effort = "high", maxTokens = 4000 } = {}, attempt = 0) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      output_config: { effort, format: { type: "json_schema", schema } },
-      system,
-      messages: [{ role: "user", content }],
-    }),
-  });
-  if (!r.ok) {
-    const text = await r.text();
-    if (attempt < 2 && (r.status === 429 || r.status >= 500)) {
+  if (!apiKey) throw new Error("no ANTHROPIC_API_KEY (put it in .env and restart)");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  let status, body;
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      signal: ctrl.signal,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: maxTokens,
+        output_config: { effort, format: { type: "json_schema", schema } },
+        system,
+        messages: [{ role: "user", content }],
+      }),
+    });
+    status = r.status;
+    body = await r.text();
+  } catch (e) {
+    throw new Error(e.name === "AbortError" ? `no answer after ${TIMEOUT_MS / 1000}s` : `network: ${e.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (status < 200 || status >= 300) {
+    if (attempt < 2 && (status === 429 || status >= 500)) {
       await new Promise((res) => setTimeout(res, 3000));
       return call(system, content, schema, { effort, maxTokens }, attempt + 1);
     }
-    throw new Error(`${r.status} ${text.slice(0, 200)}`);
+    let detail = body.slice(0, 200);
+    try { detail = JSON.parse(body).error?.message || detail; } catch {}
+    throw new Error(`${status} ${detail}`);
   }
-  const msg = await r.json();
+  const msg = JSON.parse(body);
   if (msg.stop_reason === "refusal") throw new Error("refused");
-  if (msg.stop_reason === "max_tokens") throw new Error("ran out of tokens");
-  return JSON.parse(msg.content.find((b) => b.type === "text").text);
+  if (msg.stop_reason === "max_tokens") throw new Error("answer too long, ran out of tokens");
+  const text = msg.content?.find((b) => b.type === "text")?.text;
+  if (!text) throw new Error("empty answer");
+  return JSON.parse(text);
 }
 
 const imageBlock = (dataUrl) => {
@@ -64,7 +82,7 @@ Give it a few bold, distinctive features someone could recognise from a descript
 ${SVG_RULES}
 Also give a short private title.`,
     svgSchema({ title: { type: "string" } }),
-    { effort: "high", maxTokens: 16000 },
+    { effort: "medium", maxTokens: 16000 },
   );
 }
 
@@ -148,6 +166,6 @@ Paint their world as you imagine it right now. Earlier emojis are probably the b
 ${SVG_RULES}
 Also give "imagined": one sentence describing what you painted.`,
     svgSchema({ imagined: { type: "string" } }),
-    { effort: "medium", maxTokens: 16000 },
+    { effort: "low", maxTokens: 16000 },
   );
 }

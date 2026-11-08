@@ -35,6 +35,13 @@ export function buildLandscape(view, v, P, W, sky, add) {
   const bar = (a, b, r, mat) => { const m = new THREE.Mesh(ROD, mat); m.scale.set(r, 1, r); return span(m, a, b); };
   // What the set dressing at the end needs to know about: the trees, the big near rocks and the near peaks.
   const trees = [], nearRocks = [], peaks = [];
+  const swayInWind = (g, strength = 1) => {
+    g.rotation.z = rand(-0.06, 0.06);
+    if (W) {
+      const p = rand(0, 6);
+      view.movers.push((t) => { g.rotation.z = -strength * (W.bend + gust(t) * W.sway) + Math.sin(t * 2.2 + p) * 0.03 * strength; });
+    }
+  };
 
   // Ground: gently uneven unless flat or water (or not yet known); always level near the camera.
   view.reseed(1);
@@ -139,11 +146,9 @@ export function buildLandscape(view, v, P, W, sky, add) {
         if (rand(0, 1) < 0.6) blob(DISC, s * 0.65, 1, s * 0.65, rand(-0.3, 0.3) * s, h + 0.45, rand(-0.3, 0.3) * s);
       }
       g.position.set(x, view.groundY(x, z) - 0.05, z);
-      g.rotation.z = rand(-0.06, 0.06);
+      swayInWind(g);
       add(g);
       trees.push({ g, x, z, h, s, kind });
-      const p = rand(0, 6);
-      if (W) view.movers.push((t) => { g.rotation.z = -(W.bend + gust(t) * W.sway) + Math.sin(t * 2.2 + p) * 0.03; });
     };
     for (let k = 0; k < 6; k++) {
       const cx = rand(-16, 16), cz = rand(-19, -5);
@@ -254,6 +259,113 @@ export function buildLandscape(view, v, P, W, sky, add) {
       o.position.set(x, r * 0.5, z); o.scale.set(r * rand(0.9, 1.4), r * 0.8, r * rand(0.9, 1.4)); o.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
       c.copy(rock).offsetHSL(0, 0, rand(-0.06, 0.06));
     });
+  }
+
+  // Food grows where the listener can see it, with a different silhouette for each kind.
+  view.reseed(12);
+  if (known("food")) {
+    const soil = flat(tint(0x76513a)), stem = flat(tint(0x4f813f));
+    const fruitMaterial = (color) => new THREE.MeshStandardMaterial({
+      color, emissive: color,
+      emissiveIntensity: v.weather === "rain" || v.weather === "snow" ? 0.55 : 0.25,
+      roughness: 0.45, flatShading: true,
+    });
+    const place = (r, patch = 0) => {
+      const side = patch % 2 ? 1 : -1;
+      const foodClear = (x, z) => clear(x, z) && x * side >= 2.1 && x * side <= 3.8 && z >= -8.5 && z <= -2.5;
+      for (let i = 0; i < 40; i++) {
+        const at = claim(view, side * rand(2.6, 3.2), rand(-7, -3), r, foodClear);
+        if (at) return at;
+      }
+      return null;
+    };
+    if (v.food === "mushrooms on the ground") {
+      const cap = flat(tint(0xe56f58)), paleCap = flat(tint(0xf0c66c)), stalk = flat(tint(0xf3e7c7));
+      for (let patch = 0; patch < 3; patch++) {
+        const at = place(0.9, patch);
+        if (!at) continue;
+        const [x, z] = at, group = new THREE.Group();
+        for (let i = 0, n = Math.round((4 + (rand(0, 3) | 0)) * 1.5); i < n; i++) {
+          const a = rand(0, Math.PI * 2), d = rand(0, 0.65), size = rand(0.65, 1.15);
+          const mushroom = new THREE.Group();
+          const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.26 * size, 5), stalk);
+          foot.position.y = 0.13 * size;
+          const top = new THREE.Mesh(new THREE.SphereGeometry(0.2 * size, 7, 5), rand(0, 1) < 0.25 ? paleCap : cap);
+          top.scale.y = 0.48; top.position.y = 0.3 * size;
+          mushroom.add(foot, top);
+          mushroom.position.set(Math.cos(a) * d, view.groundY(x, z), Math.sin(a) * d);
+          group.add(mushroom);
+        }
+        group.position.set(x, 0, z);
+        add(group);
+      }
+    } else if (v.food === "crops in fields") {
+      const count = 2 + (rand(0, 2) | 0);
+      for (let field = 0; field < count; field++) {
+        const at = place(1.7, field);
+        if (!at) continue;
+        const [x, z] = at, group = new THREE.Group(), grain = flat(tint(0xe6bd61));
+        for (let row = -2; row <= 2; row++) for (let i = 0; i < 7; i++) {
+          const px = row * 0.36, pz = (i - 3) * 0.38, h = rand(0.55, 0.95);
+          const stalkMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, h, 4), stem);
+          stalkMesh.position.set(px, h / 2, pz);
+          const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 5), grain);
+          head.position.set(px, h + 0.08, pz);
+          group.add(stalkMesh, head);
+        }
+        group.position.set(x, view.groundY(x, z), z);
+        swayInWind(group, 0.25);
+        add(group);
+      }
+    } else if (v.food === "berries in bushes") {
+      const leaf = flat(tint(P.leaf));
+      const berry = fruitMaterial(0xc51f45);
+      const fruit = new THREE.SphereGeometry(0.075, 7, 5);
+      for (let patch = 0; patch < 3; patch++) {
+        const at = place(0.85, patch);
+        if (!at) continue;
+        const [x, z] = at, group = new THREE.Group();
+        for (let i = 0; i < 4; i++) {
+          const b = new THREE.Mesh(BLOB, leaf);
+          b.scale.set(0.42, 0.38, 0.4); b.position.set((i % 2 - 0.5) * 0.45, 0.32 + (i > 1 ? 0.12 : 0), (i < 2 ? -1 : 1) * 0.18);
+          group.add(b);
+        }
+        const berryCount = 2 + (rand(0, 2) | 0);
+        for (let i = 0; i < berryCount; i++) {
+          const bx = rand(-0.4, 0.4), by = rand(0.16, 0.58), bz = rand(0.35, 0.53);
+          const b = new THREE.Mesh(fruit, berry);
+          b.position.set(bx, by, bz);
+          group.add(b);
+        }
+        group.position.set(x, view.groundY(x, z), z);
+        swayInWind(group);
+        add(group);
+      }
+    } else if (v.food === "fruit in trees") {
+      const leaf = flat(tint(P.leaf));
+      const fruit = fruitMaterial(0xe94b24);
+      const sphere = new THREE.SphereGeometry(1, 8, 6);
+      for (let patch = 0; patch < 3; patch++) {
+        const at = place(1.1, patch);
+        if (!at) continue;
+        const [x, z] = at, group = new THREE.Group();
+        const trunkMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 1.5, 6), soil);
+        trunkMesh.position.y = 0.75;
+        group.add(trunkMesh);
+        const canopy = new THREE.Mesh(BLOB, leaf);
+        canopy.scale.set(0.9, 0.75, 0.8); canopy.position.y = 1.8;
+        group.add(canopy);
+        for (let i = 0; i < 5; i++) {
+          const a = i * Math.PI * 2 / 5, apple = new THREE.Mesh(sphere, fruit);
+          apple.scale.setScalar(0.14);
+          apple.position.set(Math.cos(a) * 0.62, 1.65 + (i % 2) * 0.35, Math.sin(a) * 0.55);
+          group.add(apple);
+        }
+        group.position.set(x, view.groundY(x, z), z);
+        swayInWind(group);
+        add(group);
+      }
+    }
   }
 
   // Soft far hills behind everything, most of the way to the sky colour, so the horizon is a wavy line rather than a ruler's edge.

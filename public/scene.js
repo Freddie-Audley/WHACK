@@ -67,7 +67,7 @@ export class WorldView {
     this.renderer.setSize(w, h);
   }
 
-  // Rebuild the backdrop from facts {suns, wind, animals, terrain, weather}. An unknown fact leaves its
+  // Rebuild the backdrop from facts {suns, wind, animals, food, terrain, weather}. An unknown fact leaves its
   // part of the world white: no facts at all is a blank white void, and each fact paints its own piece in.
   // Palette, tree shapes and moons are random (per view), so no two worlds look the same.
   showWorld(v) {

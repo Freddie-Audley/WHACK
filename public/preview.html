@@ -16,7 +16,7 @@
 <div id="facts"></div>
 <pre id="log" style="position:fixed;bottom:8px;left:8px;margin:0;padding:6px 10px;background:rgba(255,255,255,.85);border-radius:8px"></pre>
 <script type="module">
-  // Dev page: a world from the query string, e.g. preview.html?suns=two suns&wind=a gale&animals=cows&terrain=mountains&weather=rain
+  // Dev page: a world from the query string, e.g. preview.html?suns=two suns&wind=a gale&animals=cows&food=fruit%20in%20trees&terrain=mountains&weather=rain
   // Add who=alien (board) or who=listener (no board) for the ambassador's stage, imagined for the guesser's wide view,
   // earth for Earth's own colours, seed=N to pin the layout, and pose=idle|drawing|raised|looking.
   // Errors and stats go on the page too, so a headless --dump-dom run can read them.
@@ -25,7 +25,7 @@
   addEventListener("unhandledrejection", (e) => note(`error: ${e.reason?.message || e.reason}`));
   import { Scene, WorldView, EARTH_COLOURS } from "./scene.js";
   const q = new URLSearchParams(location.search), v = {};
-  for (const k of ["suns", "wind", "animals", "terrain", "weather"]) if (q.get(k)) v[k] = q.get(k);
+  for (const k of ["suns", "wind", "animals", "food", "terrain", "weather"]) if (q.get(k)) v[k] = q.get(k);
   const who = q.get("who") || "alien", stage = document.getElementById("stage");
   let view;
   if (who === "imagined") view = new WorldView(stage, { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });

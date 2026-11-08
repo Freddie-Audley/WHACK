@@ -18,7 +18,7 @@ const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thin
 let role = "a";
 const world = generateWorld();
 world.order = world.order.slice(0, N);
-// The facts shared out over the boards as evenly as possible: five facts on four boards means one board carries two.
+// The facts shared out over the boards as evenly as possible.
 const pictures = Array.from({ length: Math.min(PICTURES, N) }, () => []);
 world.order.forEach((id, i) => pictures[i % pictures.length].push(id));
 const describeFacts = (ids) => ids.map((id) => `${CATEGORIES.find((c) => c.id === id).label}: ${world.values[id]}`).join(", ");

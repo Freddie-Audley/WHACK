@@ -419,12 +419,12 @@ export class Scene extends WorldView {
     }
   }
 
-  // Largest font size (26px down to 14px) at which the bubble is no taller than `room`; the smallest if none is.
+  // Largest font size (26px down to 14px) at which the bubble fits in the stage height; the smallest if none is.
   // If even 14px is too tall at the usual width, the bubble is allowed to go nearly the full stage width.
-  fitBubble(room) {
+  fitBubble(height) {
     const b = this.bubble, BIG = 26, SMALL = 14;
     b.style.left = "0px"; // measure with the whole stage width available
-    const fits = (fs) => { b.style.setProperty("--fs", `${fs}px`); return b.offsetHeight <= room; };
+    const fits = (fs) => { b.style.setProperty("--fs", `${fs}px`); return b.offsetHeight <= height; };
     b.style.maxWidth = ""; // the stylesheet's width first
     if (fits(BIG)) return BIG;
     if (!fits(SMALL)) b.style.maxWidth = "calc(100% - 20px)"; // a lot to say: let it spread across the stage
@@ -442,11 +442,9 @@ export class Scene extends WorldView {
     const W = this.container.clientWidth, H = this.container.clientHeight;
     const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H; // top of the head on screen
     const GAP = 14, M = 10;
-    const room = Math.min(y, H) - GAP - M; // space between the stage's top edge and the head
-    // Refit only when the words, the stage width or the room above the head have changed noticeably.
-    // (room is rounded down to a step of 6px so the fit stays valid while the head bobs a little.)
-    const step = Math.floor(room / 6) * 6, key = `${W}|${step}`;
-    if (this.bubbleFit !== key) { this.fitBubble(step); this.bubbleFit = key; }
+    // Fit against the stage, not the changing gap above the swaying head, so the text stays the same size.
+    const key = `${W}|${H}`;
+    if (this.bubbleFit !== key) { this.fitBubble(H - 2 * M); this.bubbleFit = key; }
     const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight;
     // Centred above the head; slides sideways only as far as needed to stay on the stage. If even the smallest
     // text is too tall for the room above the head, it sits at the top of the stage over the head, without a tail.

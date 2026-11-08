@@ -20,7 +20,7 @@
   body.describe #stage, body.guess #stage, body.guess #imagined, body.guess #cam { display: block; }
   #stage { left: 8px; right: 8px; }
   #stage canvas, #imagined canvas { display: block; }
-  /* The ambassador's speech bubble. scene.js shrinks --fs until it fits above the head (see placeBubble). */
+  /* The ambassador's speech bubble. scene.js fits --fs to the stage (see placeBubble). */
   .bubble { position: absolute; left: 0; top: 0; max-width: min(62%, 540px); padding: 12px 18px 13px; border-radius: 22px; background: linear-gradient(#fff, #f5f2ff); color: #1d1d3a; font-size: var(--fs, 26px); font-weight: 500; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; pointer-events: none; transition: opacity .3s; transform-origin: var(--tail, 50%) 100%; box-shadow: 0 8px 26px rgba(40,30,80,.18), 0 1px 3px rgba(40,30,80,.08), inset 0 1px 0 #fff, 0 0 0 1.5px rgba(120,100,200,.16); }
   .bubble.pop { animation: bubble-in .28s cubic-bezier(.2,1.4,.4,1); }
   @keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(.94); } }

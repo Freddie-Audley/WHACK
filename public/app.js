@@ -14,7 +14,7 @@ const HOLD_MS = 3000;                        // how long the finished board stay
 const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
 const PICTURES = 4;                          // the describer gets this many boards for the whole world; people can add more after
-const IDLE = ["Hello?", "They're thinking.", "Take your time.", "Is this thing on?"];
+const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thing on?", "Still here.", "The natives are quiet."];
 let role = "a";
 const world = generateWorld();
 world.order = world.order.slice(0, N);
@@ -41,6 +41,8 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const board = document.createElement("canvas");
 board.width = W; board.height = H;
 renderBoard(board, emptyGrid());
+const seenBoard = document.createElement("canvas"); // the guesser's reading of their board, shown beside the webcam
+seenBoard.width = W; seenBoard.height = H;
 const editorCanvas = $("pixel-board");
 const editorGrid = emptyGrid();
 renderEditorBoard(editorCanvas, editorGrid);
@@ -143,10 +145,13 @@ function showGuesses() {
 }
 
 // Every picture is requested at the start, so drawing never waits on the model.
+// A board that came back (nearly) blank, as "no sun" or "nothing" sometimes does, is asked for once more.
 function prefetch() {
   pictures.forEach((ids, k) => {
     const facts = ids.map((id) => ({ category: CATEGORIES.find((c) => c.id === id), value: world.values[id] }));
-    drawings[k] = draw({ facts }).catch((e) => { log(`error: ${e.message}`); return null; });
+    drawings[k] = draw({ facts })
+      .then((out) => ink(cleanGrid(out.rows)) >= 8 ? out : (log(`redraw: "${describeFacts(ids)}" came back blank`), draw({ facts })))
+      .catch((e) => { log(`error: ${e.message}`); return null; });
   });
 }
 
@@ -164,9 +169,9 @@ async function show() {
   const out = await drawings[k];
   if (!out) { scene.pose = "idle"; return null; }
   const grid = cleanGrid(out.rows);
-  log(`draw "${describeFacts(pictures[k])}" — ${out.note} / "${out.thought}" / "${out.after}"`);
-  say(out.thought);
-  await sleep(readMs(out.thought));
+  log(`draw "${describeFacts(pictures[k])}" — ${out.note} / "${out.before}"`);
+  say(out.before);
+  await sleep(readMs(out.before));
   scene.pose = "raised";
   document.body.classList.add("raised");
   await sleep(300);
@@ -180,7 +185,7 @@ function lower() {
   document.body.classList.remove("raised");
 }
 
-// Describer: one fact after another; the finished board stays up a while, then a word on the way down.
+// Describer: one fact after another; the finished board stays up a while, then comes down in silence.
 async function describe() {
   await sleep(1500);
   while (sent < pictures.length) {
@@ -188,8 +193,8 @@ async function describe() {
     if (!out) continue;
     await sleep(HOLD_MS);
     lower();
-    say(out.after);
-    await sleep(2500);
+    say(null);
+    await sleep(1500);
   }
   over = true;
 }
@@ -199,25 +204,33 @@ async function describe() {
 async function readBoard() {
   $("processed").removeAttribute("src"); // nothing stale from the last board
   document.body.classList.add("spotted");
+  scene.pose = "looking";
   const falls = peer.falls, down = () => peer.falls !== falls; // the board has gone down since it came up
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
   await sleep(500); // let their board settle in frame
-  let reading = null;
+  let reading = null, read = null; // `read`: the board as last sent, so a board that has not changed is not sent again
   while (!down()) {
     try {
-      const image = peer.capture();
-      $("processed").src = image; // shown beside the webcam: exactly what the model is given
-      const out = await interpret({ image, categories: CATEGORIES, believed: guesses, previous: reading });
-      const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
-      const changed = !reading || key(reading) !== key(out);
-      log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} / "${out.thought}"`);
-      reading = pending = out;
-      if (changed) showGuesses();
-      say(out.thought);
+      const grid = peer.capture();
+      if (!grid) log("see: no frame in the crop");
+      else if (grid.join() !== read) {
+        renderBoard(seenBoard, grid);
+        $("processed").src = seenBoard.toDataURL(); // exactly what the model is given
+        log(`board: ${grid.join("/")}`);
+        const out = await interpret({ grid, categories: CATEGORIES, believed: guesses, previous: reading });
+        read = grid.join();
+        const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
+        const changed = !reading || key(reading) !== key(out);
+        log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} / "${out.remark}"`);
+        reading = pending = out;
+        if (changed) showGuesses();
+        say(out.remark);
+      }
     } catch (e) { log(`error: ${e.message}`); }
     await waitFor(down, PAUSE_MS);
   }
   document.body.classList.remove("spotted");
+  scene.pose = "idle";
   pending = null;
   if (reading) {
     for (const r of reading.readings) guesses[r.category] = r;
@@ -260,8 +273,9 @@ async function shrinkWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
-// Back to the menu: begin afresh (the reload shrinks the window).
-function menu() { location.reload(); }
+// Back to the menu: begin afresh (the reload shrinks the window). Reset reloads straight back into the same role.
+function menu() { q.delete("role"); location.href = location.pathname + (q.size ? `?${q}` : ""); }
+function reset() { q.set("role", role); location.search = `?${q}`; }
 
 // Wipe (or Enter): the board goes down (so the guesser settles on what it saw), is wiped, and comes back up clean.
 let wiping = false;
@@ -315,6 +329,9 @@ console.error = (...a) => { origErr(...a); log("console.error: " + a.map(String)
 addEventListener("error", (e) => log(`error: ${e.message} (${e.filename}:${e.lineno})`));
 addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message || e.reason} ${e.reason?.stack || ""}`));
 
+// Safari on iPhone ignores the viewport's user-scalable=no and zooms on a pinch anyway; it does honour this.
+addEventListener("gesturestart", (e) => e.preventDefault());
+
 addEventListener("keydown", (e) => {
   if (e.code === "KeyQ") { e.preventDefault(); window.__TAURI__?.core.invoke("quit"); return; }
   if (!t0) return; // still on the menu
@@ -323,7 +340,8 @@ addEventListener("keydown", (e) => {
 });
 
 (async () => {
-  if (phoneApp) earth(); else shrinkWindow();
+  const again = q.get("role"); // set by Reset
+  if (phoneApp) earth(); else if (!again) shrinkWindow();
   // TEMP: report the phone's screen sizes to the `npm run phone` terminal, to chase the white bar.
   setTimeout(() => {
     const p = document.createElement("div");
@@ -336,9 +354,13 @@ addEventListener("keydown", (e) => {
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (key) document.body.classList.add("key"); // without one only Contact from Earth works
+  if (again === "earth") earth();
+  else if (again === "a" || again === "b") { if (key) start(again); else shrinkWindow(); }
   $("startA").onclick = () => start("a");
   $("startB").onclick = () => start("b");
   $("startE").onclick = () => earth();
+  $("menu").onclick = () => menu();
+  $("reset").onclick = () => reset();
   $("pen-black").onclick = () => selectPen("#");
   $("pen-white").onclick = () => selectPen(".");
   $("brush-tool").onclick = () => selectEditorTool("pen");

@@ -10,10 +10,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <style>
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  /* No pinch or double-tap zoom on phones; nothing here scrolls, so panning is all touch needs to do. */
+  html, body { height: 100%; touch-action: pan-x pan-y; }
   body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; color: #1d1d3a; background: linear-gradient(135deg, var(--bg1, rgba(255,214,232,.25)), var(--bg2, rgba(201,228,255,.25))); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
   .surface { display: none; position: fixed; top: 40px; bottom: 8px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   body.describe #stage, body.guess #stage, body.guess #imagined, body.guess #cam { display: block; }
@@ -37,9 +38,9 @@
   @keyframes dip { 0%, 100% { transform: none; } 25%, 75% { transform: translateY(100vh); } }
   #pixel-board { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
   .editor-tools { grid-column: 3; grid-row: 1; justify-self: start; margin-left: 20px; display: grid; grid-template-columns: repeat(2, 68px); gap: 10px; }
-  /* The selected tool gets a black outline. */
+  /* The selected tool is the solid one, with a dark ring. */
   #editor .square-button { width: 68px; height: 68px; padding: 0; display: grid; place-items: center; touch-action: manipulation; }
-  #editor .square-button[aria-pressed="true"] { box-shadow: 0 0 0 3px #111, 0 2px 8px rgba(40,30,80,.15); }
+  #editor .square-button[aria-pressed="true"] { --back: rgba(255,255,255,.95); box-shadow: 0 0 0 2px #1d1d3a, 0 6px 20px rgba(40,30,80,.12); }
   /* Colour buttons: a round swatch inset in the button. */
   #editor .pen { --m: 10px; background: radial-gradient(circle closest-side, var(--ink) calc(100% - var(--m) - .5px), var(--back) calc(100% - var(--m))); }
   /* Wipe sits with the tools, as wide as two of them. */
@@ -55,10 +56,10 @@
   #cam .frame { position: relative; }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
   #preview { display: none; }
-  #seen { display: none; position: absolute; top: 8px; left: 8px; width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #1d1d3a; font-size: 17px; font-weight: 600; line-height: 28px; text-align: center; box-shadow: 0 1px 4px rgba(40,30,80,.2); }
+  #seen { display: none; position: absolute; top: 50%; left: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px; border-radius: 50%; background: rgba(255,255,255,.92); color: #1d1d3a; font-size: 52px; font-weight: 600; line-height: 84px; text-align: center; box-shadow: 0 2px 10px rgba(40,30,80,.25); }
   body.spotted #seen { display: block; }
-  /* The processed crop (what the model reads), beside the webcam while a board is in view; mirrored like the webcam. */
-  #processed { position: fixed; left: 364px; bottom: 16px; height: 191px; display: none; z-index: 5; border-radius: 12px; background: #fff; transform: scaleX(-1); box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
+  /* The board as read off the webcam (what the model is given), beside the webcam while a board is in view. */
+  #processed { position: fixed; left: 364px; bottom: 16px; height: 191px; display: none; z-index: 5; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   body.spotted #processed[src] { display: block; }
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -73,8 +74,14 @@
   body.ready #choices { visibility: visible; }
   body:not(.key) #startA, body:not(.key) #startB { opacity: .4; pointer-events: none; }
   #snakes { position: fixed; inset: 0; z-index: -1; }
-  /* Every button in the app: a frosted pill (or circle, when square). */
-  button { --back: rgba(255,255,255,.6); font: inherit; font-size: 16px; font-weight: 500; padding: 8px 18px; border: 0; border-radius: 999px; cursor: pointer; background: var(--back); color: #1d1d3a; box-shadow: 0 1px 4px rgba(40,30,80,.08), 0 0 0 1px rgba(255,255,255,.45), inset 0 1px 0 rgba(255,255,255,.6); }
+  /* Every button in the app: a liquid-glass pill (or circle, when square), like the panels. */
+  button { --back: rgba(255,255,255,.45); font: inherit; font-size: 15px; font-weight: 500; padding: 9px 20px; border: 0; border-radius: 999px; cursor: default; color: #1d1d3a; background: var(--back); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 6px 20px rgba(40,30,80,.10), inset 0 0 0 1px rgba(255,255,255,.55), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(255,255,255,.2); transition: background .15s, transform .15s, box-shadow .15s; }
+  button:hover { --back: rgba(255,255,255,.65); }
+  button:active { --back: rgba(255,255,255,.8); transform: scale(.97); box-shadow: 0 2px 8px rgba(40,30,80,.10), inset 0 0 0 1px rgba(255,255,255,.7); }
+  /* Back to the menu and Reset, up in the title bar beside the traffic lights; only while a role is on. */
+  #back { display: none; position: fixed; top: 6px; left: 84px; z-index: 21; gap: 8px; }
+  #back button { padding: 5px 14px; font-size: 13px; }
+  body.describe #back, body.guess #back, body.earth #back { display: flex; }
   #nokey { margin-top: 12px; color: #c0392b; display: none; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
@@ -103,12 +110,17 @@
     #editor .pen, #editor #brush-tool, #editor #fill-tool { display: none; } /* #editor: outranks #editor .square-button */
     .editor-tools { display: block; }
     #editor #wipe { width: auto; height: 48px; padding: 0 32px; margin-top: 16px; }
+    #back { display: none !important; } /* phones open on the board and have no menu to go back to */
   }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
 </head>
 <body>
 <div id="drag" data-tauri-drag-region></div>
+<div id="back">
+  <button id="menu" type="button">Back to menu</button>
+  <button id="reset" type="button">Reset</button>
+</div>
 <div id="stage" class="surface"></div>
 <div id="imagined" class="surface"></div>
 <main id="editor" aria-label="Pixel editor">

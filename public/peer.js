@@ -1,9 +1,11 @@
 // How this agent sees the other ambassador's board.
-// Both sources answer: start(), raised() -> bool, capture() -> dataURL, publish(raised, dataURL).
+// Both sources answer: start(), raised() -> bool, capture() -> grid, publish(raised, dataURL).
+import { SIZE } from "./board.js";
 
 // Real link: a webcam pointed at the other laptop. "Raised" = lots of magenta border in view.
-// The board is located by its magenta frame; only that region (padded) is sent to the model,
-// and the same region is highlighted on the preview so you can see what the agent will see.
+// The board is located by its magenta frame; that region (padded) is cropped and read cell by cell into 12 rows
+// of "." and "#", which is what the model is given. The same region is highlighted on the preview so you can see
+// what the agent will see.
 export class WebcamPeer {
   constructor(video, previewCanvas, overlayCanvas, threshold = 0.02) {
     this.video = video;
@@ -27,22 +29,10 @@ export class WebcamPeer {
     const ctx = this.preview.getContext("2d", { willReadFrequently: true });
     const w = this.preview.width, h = this.preview.height;
     ctx.drawImage(this.video, 0, 0, w, h);
-    const d = ctx.getImageData(0, 0, w, h).data;
-    const rows = new Uint16Array(h), cols = new Uint16Array(w);
-    let n = 0;
-    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) {
-      if (d[i] > 140 && d[i + 2] > 140 && d[i + 1] < 110) { n++; rows[y]++; cols[x]++; }
-    }
+    const { n, box: b } = magenta(ctx.getImageData(0, 0, w, h).data, w, h);
     this.fraction = n / (w * h);
-    // Rows/columns with at least a few magenta pixels bound the frame; stray pixels are ignored.
-    const span = (counts, min) => {
-      let a = -1, b = -1;
-      for (let k = 0; k < counts.length; k++) if (counts[k] >= min) { if (a < 0) a = k; b = k; }
-      return a < 0 ? null : [a, b + 1];
-    };
-    const ys = span(rows, 3), xs = span(cols, 3);
-    this.box = ys && xs && n > w * h * 0.004
-      ? { x: xs[0] / w, y: ys[0] / h, w: (xs[1] - xs[0]) / w, h: (ys[1] - ys[0]) / h }
+    this.box = b && n > w * h * 0.004
+      ? { x: b.x0 / w, y: b.y0 / h, w: (b.x1 - b.x0) / w, h: (b.y1 - b.y0) / h }
       : null;
     return this.fraction;
   }
@@ -52,7 +42,8 @@ export class WebcamPeer {
     if (up !== this.seenUp) { this.seenUp = up; this.since = now; }
     if (up !== this.up && now - this.since > 250) { this.up = up; if (up) this.rises++; else this.falls++; }
   }
-  // The frame cropped to the board (with a margin), or the whole frame if no board is in view.
+  // The board as 12 rows of "." and "#", read off the frame cropped to it, or null when the magenta frame is not
+  // in the crop.
   capture() {
     const vw = this.video.videoWidth, vh = this.video.videoHeight;
     const b = this.box || { x: 0, y: 0, w: 1, h: 1 };
@@ -65,10 +56,15 @@ export class WebcamPeer {
     c.height = Math.round((y1 - y0) * scale);
     const ctx = c.getContext("2d");
     ctx.drawImage(this.video, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+    // The frame again, at full resolution this time (the preview is only 160 pixels wide): a cell is a few pixels
+    // of the preview, so the lattice has to come from the crop. A frame that is cut off is not square; skip it.
+    const { box } = magenta(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+    const ratio = box ? (box.x1 - box.x0) / (box.y1 - box.y0) : 0;
+    const whole = box && box.x1 - box.x0 >= 2 * SIZE && ratio > 0.75 && ratio < 1.33;
     binarise(ctx, c.width, c.height);
-    return c.toDataURL("image/png");
+    return whole ? readGrid(ctx, c.width, c.height, box) : null;
   }
-  // Dim everything but the region that capture() would send.
+  // Dim everything but the region that capture() would read.
   drawOverlay() {
     if (!this.overlay) return;
     const ctx = this.overlay.getContext("2d");
@@ -96,6 +92,48 @@ export class WebcamPeer {
     ctx.restore();
   }
   publish() {}
+}
+
+// Where the magenta is: how many pixels, and their bounding box in pixels (null when there is none).
+// Rows/columns with at least a few magenta pixels bound the frame; stray pixels are ignored.
+function magenta(d, w, h) {
+  const rows = new Uint16Array(h), cols = new Uint16Array(w);
+  let n = 0;
+  // Red and blue well above green, whatever the brightness: a frame half in shadow must still be bounded exactly,
+  // or the lattice is read off by a cell.
+  for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) {
+    if (d[i] > 100 && d[i + 2] > 100 && d[i + 1] < 0.55 * Math.min(d[i], d[i + 2])) { n++; rows[y]++; cols[x]++; }
+  }
+  const span = (counts, min) => {
+    let a = -1, b = -1;
+    for (let k = 0; k < counts.length; k++) if (counts[k] >= min) { if (a < 0) a = k; b = k; }
+    return a < 0 ? null : [a, b + 1];
+  };
+  const ys = span(rows, 3), xs = span(cols, 3);
+  return { n, box: ys && xs ? { x0: xs[0], y0: ys[0], x1: xs[1], y1: ys[1] } : null };
+}
+
+// Read the binarised board cell by cell: "#" when the middle half of the cell (clear of its neighbours even when the
+// lattice is off by a little) is mostly black. The frame is 5% of the board's width on each side, plus a couple of
+// pixels of padding, so the drawing fills the middle 89% of the magenta box.
+const INNER = 0.893;
+function readGrid(ctx, w, h, b) {
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+  const left = b.x0 + bw * (1 - INNER) / 2, top = b.y0 + bh * (1 - INNER) / 2, cw = bw * INNER / SIZE, ch = bh * INNER / SIZE;
+  const rows = [];
+  for (let gy = 0; gy < SIZE; gy++) {
+    let row = "";
+    for (let gx = 0; gx < SIZE; gx++) {
+      const x0 = Math.round(left + (gx + 0.25) * cw), x1 = Math.round(left + (gx + 0.75) * cw);
+      const y0 = Math.round(top + (gy + 0.25) * ch), y1 = Math.round(top + (gy + 0.75) * ch);
+      let dark = 0, all = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { all++; if (d[(y * w + x) * 4] < 128) dark++; }
+      row += all && dark * 2 > all ? "#" : ".";
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
 // Turn the crop into clean black and white. The threshold is local (each pixel against the mean of a window

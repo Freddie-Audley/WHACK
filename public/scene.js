@@ -1,14 +1,8 @@
 import * as THREE from "three";
+import { flat, rand, pick, reseed, col, DT, shade, DARK, WHITE } from "./props.js";
+import { buildLandscape } from "./landscape.js";
+import { buildAnimals } from "./animals.js";
 
-const flat = (color) => new THREE.MeshStandardMaterial({ color, flatShading: true });
-// Random numbers come from `rng`. While a world is being built it is seeded, so a world rebuilt
-// with one more fact keeps its palette and layout: things get added, nothing shuffles.
-let rng = Math.random;
-const rand = (a, b) => a + rng() * (b - a);
-const pick = (arr) => arr[Math.floor(rng() * arr.length)];
-const seeded = (s) => () => { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-const col = (h, s, l) => new THREE.Color().setHSL(((h % 1) + 1) % 1, s, l);
-const DT = 0.016;
 
 // Calm palettes: sky, ground, foliage, stone. A world picks one at random.
 const PALETTES = [
@@ -21,11 +15,6 @@ const PALETTES = [
 ];
 // Earth's own colours: blue sky, green grass and trees, grey stone.
 export const EARTH_COLOURS = { sky: 0x9fd0f2, ground: 0x6fae4f, leaf: 0x2f7d3a, rock: 0x8a8f96 };
-const TRUNK = 0x7a5a3e;
-
-const gust = (t) => 0.5 + 0.5 * Math.sin(t * 0.8) * Math.sin(t * 0.31 + 1);
-
-const shade = (m) => { m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
 
 // A world built from facts, viewed from a fixed camera.
 export class WorldView {
@@ -86,8 +75,7 @@ export class WorldView {
     this.movers = [];
     const add = (m, shadows = true) => { this.world.add(shadows ? shade(m) : m); return m; };
     const known = (k) => v[k] != null;
-    const reseed = (k) => { rng = seeded(this.seed + k); }; // each section draws from its own stream
-    reseed(0);
+    this.reseed(0);
     const P = this.palette ?? pick(PALETTES);
     // How hard the wind blows: trees bend by `bend` plus a gusting `sway`; streaks fly past at `speed`.
     const W = { "a breeze": { bend: 0.04, sway: 0.08, streaks: 6, speed: 4 }, "a gale": { bend: 0.22, sway: 0.3, streaks: 40, speed: 16 } }[v.wind];
@@ -105,381 +93,13 @@ export class WorldView {
     this.sun.intensity = v.suns === "no sun" ? 0.7 : 2.0;
     this.sun.color.set(v.suns === "no sun" ? 0xb8c4ff : 0xfff4d6);
 
-    // Ground: gently uneven unless flat or water (or not yet known); always level near the camera.
-    reseed(1);
-    const amp = v.terrain === "mountains" ? 0.35 : 0;
-    this.groundY = (x, z) => {
-      if (!amp) return 0;
-      const k = Math.min(1, Math.max(0, (Math.hypot(x, z) - 2) / 4));
-      return amp * k * (Math.sin(x * 0.45 + 1.3) * Math.cos(z * 0.38) + 0.6 * Math.sin(x * 0.9 - z * 0.7));
-    };
-    const groundColour = new THREE.Color(!known("terrain") ? 0xffffff : v.terrain === "water" ? 0x6fb7d9 : P.ground);
-    if (v.weather === "snow") groundColour.lerp(new THREE.Color(0xffffff), 0.75);
-    if (v.suns === "three suns") groundColour.lerp(new THREE.Color(0xd98a4a), 0.5); // scorched
-    if (v.suns === "no sun") groundColour.multiplyScalar(0.6);
-    const geo = new THREE.PlaneGeometry(70, 70, 56, 56);
-    const gp = geo.attributes.position;
-    for (let i = 0; i < gp.count; i++) gp.setZ(i, this.groundY(gp.getX(i), -gp.getY(i)));
-    geo.computeVertexNormals();
-    const ground = add(new THREE.Mesh(geo, flat(groundColour)), false);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-
-    if (v.terrain === "mountains") for (let i = 0; i < 16; i++) {
-      const hgt = rand(7, 17), x = -26 + i * 3.5 + rand(-1, 1), z = rand(-26, -16);
-      const m = add(new THREE.Mesh(new THREE.ConeGeometry(rand(3, 6), hgt, (rand(5, 8) | 0)), flat(new THREE.Color(i % 2 ? P.rock : P.leaf).lerp(sky, 0.35))));
-      m.position.set(x, hgt / 2 - 0.5, z);
-      m.rotation.y = rand(0, 6);
-    }
-    if (v.terrain === "water") for (let i = 0; i < 20; i++) {
-      const r = add(new THREE.Mesh(new THREE.TorusGeometry(rand(0.4, 1.2), 0.03, 4, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })), false);
-      r.rotation.x = -Math.PI / 2;
-      const x = rand(-14, 14), z = rand(-14, -1), p = rand(0, 6);
-      this.movers.push((t) => { const k = (t * 0.35 + p) % 3; r.scale.setScalar(0.3 + k); r.position.set(x, 0.03, z); r.material.opacity = 0.7 * (1 - k / 3); });
-    }
-
-    // Suns, moon, ring, stars: flat discs far away, untouched by fog. The sky stays empty until the suns are known.
-    reseed(2);
-    const disc = (r, colour, opacity = 1) => new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: colour, fog: false, transparent: opacity < 1, opacity }));
-    const n = { "no sun": 0, "one sun": 1, "two suns": 2, "three suns": 3 }[v.suns] ?? 0;
-    const tints = [0xfff1a8, 0xffb38a, 0xc8f0ff];
-    for (let i = 0; i < n; i++) {
-      const r = rand(1.4, 2.4), x = -9 + i * 8 + rand(-1, 1), y = rand(8, 12);
-      add(disc(r, tints[i]), false).position.set(x, y, -30);
-      add(disc(r * 1.7, tints[i], 0.25), false).position.set(x, y, -30.1);
-    }
-    if (known("suns") && rng() < 0.5) add(disc(rand(0.5, 1.1), 0xf4f1e8, 0.9), false).position.set(rand(-14, 14), rand(9, 13), -29);
-    if (known("suns") && rng() < 0.35) {
-      const ring = add(new THREE.Mesh(new THREE.TorusGeometry(rand(4, 7), 0.12, 4, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.leaf).lerp(sky, 0.5), fog: false })), false);
-      ring.position.set(rand(-6, 6), 11, -31); ring.rotation.x = rand(1.1, 1.4);
-    }
-    if (v.suns === "no sun") add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position",
-      new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),
-      new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, fog: false })), false);
-
-    // Trees in clumps, of one random shape, once the terrain is known. They bend in the wind.
-    reseed(3);
-    if (known("terrain") && v.terrain !== "water") {
-      const leaf = flat(P.leaf), trunk = flat(TRUNK);
-      const kind = (rng() * 3) | 0;
-      for (let k = 0; k < 5; k++) {
-        const cx = rand(-15, 15), cz = rand(-15, -4);
-        for (let i = rand(2, 5) | 0; i--;) {
-          const tree = new THREE.Group();
-          const h = rand(1.5, 3.5), s = rand(0.8, 1.2);
-          const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.16, h, 5), trunk);
-          stem.position.y = h / 2;
-          const top = new THREE.Mesh(kind === 0 ? new THREE.ConeGeometry(0.8 * s, 1.8 * s, 6) : kind === 1 ? new THREE.IcosahedronGeometry(0.9 * s, 0) : new THREE.CylinderGeometry(1.1 * s, 0.9 * s, 0.4, 7), leaf);
-          top.position.y = h + 0.4 * s;
-          top.rotation.y = rand(0, 6);
-          tree.add(stem, top);
-          const x = cx + rand(-2.5, 2.5), z = cz + rand(-2, 2);
-          tree.position.set(x, this.groundY(x, z) - 0.05, z);
-          tree.rotation.z = rand(-0.06, 0.06);
-          add(tree);
-          const p = rand(0, 6);
-          if (W) this.movers.push((t) => { tree.rotation.z = -(W.bend + gust(t) * W.sway) + Math.sin(t * 2.2 + p) * 0.03; });
-        }
-      }
-    }
-
-    // Animals, and how each copes with the terrain and the wind. On water: cows swim up to their bellies, snails
-    // float shell-up, fish leap, octopuses peek out, snakes swim with their heads up. On land: fish flop about gasping,
-    // and octopuses wear fishbowls.
-    // In a gale the birds flap flat out and still get blown backwards.
-    reseed(5);
-    const dark = flat(0x3a3560), white = flat(0xffffff);
-    const water = v.terrain === "water";
-    const googly = (r, x, y, z) => { // a white eye with a pupil, looking along +z
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), white);
-      eye.position.set(x, y, z);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(r * 0.5, 5, 4), dark);
-      pupil.position.z = r * 0.7;
-      eye.add(pupil);
-      return eye;
-    };
-    if (v.animals === "cows") {
-      const hide = flat(0xf4f1ea), nose = flat(0xe9a6a6);
-      for (let i = 0; i < 6; i++) {
-        const cow = new THREE.Group(), head = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.75, 0.7), hide);
-        body.position.y = 0.85;
-        cow.add(body);
-        for (const [sx, sz] of [[-0.5, -0.22], [0.5, -0.22], [-0.5, 0.22], [0.5, 0.22]]) {
-          const leg = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), dark);
-          leg.position.set(sx, 0.25, sz);
-          cow.add(leg);
-        }
-        for (let k = 0; k < 3; k++) {
-          const spot = new THREE.Mesh(new THREE.BoxGeometry(rand(0.25, 0.45), rand(0.2, 0.35), 0.72), dark);
-          spot.position.set(rand(-0.45, 0.45), rand(0.75, 1.0), 0);
-          cow.add(spot);
-        }
-        const skull = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.42, 0.42), hide);
-        skull.position.x = 0.25;
-        const snout = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.24, 0.36), nose);
-        snout.position.set(0.52, -0.08, 0);
-        head.add(skull, snout);
-        for (const sz of [-0.15, 0.15]) {
-          const horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.2, 4), dark);
-          horn.position.set(0.2, 0.28, sz);
-          head.add(horn);
-        }
-        head.position.set(0.6, 1.1, 0);
-        cow.add(head);
-        const x0 = rand(-12, 12), z = rand(-13, -3), p = rand(0, 6);
-        cow.position.set(x0, this.groundY(x0, z), z);
-        cow.rotation.y = rand(0, 6);
-        add(cow);
-        if (water) this.movers.push((t) => { // swimming: in up to the belly, chin up, drifting
-          cow.position.set(x0 + Math.sin(t * 0.2 + p) * 1.5, -0.6 + Math.sin(t * 1.5 + p) * 0.06, z);
-          head.rotation.z = 0.25;
-        });
-        else this.movers.push((t) => { head.rotation.z = -0.7 * Math.max(0, Math.sin(t * 0.5 + p)); }); // head down to graze, now and then
-      }
-    }
-    if (v.animals === "birds") {
-      const bodyGeo = new THREE.ConeGeometry(0.12, 0.6, 5), wingGeo = new THREE.BoxGeometry(0.5, 0.03, 0.25);
-      const gale = v.wind === "a gale";
-      for (let k = 0; k < 2; k++) {
-        const cx = rand(-5, 5), cy = rand(4.5, 6.5), cz = rand(-14, -8);
-        for (let i = 0; i < 7; i++) {
-          const bird = new THREE.Group(), body = new THREE.Mesh(bodyGeo, dark);
-          body.rotation.x = Math.PI / 2; // beak forward, along +z
-          bird.add(body);
-          const wings = [-1, 1].map((sx) => {
-            const pivot = new THREE.Group(), wing = new THREE.Mesh(wingGeo, dark);
-            wing.position.x = sx * 0.25;
-            pivot.add(wing);
-            bird.add(pivot);
-            return pivot;
-          });
-          bird.scale.setScalar(1.5);
-          add(bird);
-          const R = rand(2, 4), w = rand(0.4, 0.7) * (k ? -1 : 1), p = rand(0, 6), dy = rand(-1, 1);
-          this.movers.push((t) => {
-            const a = t * w + p, f = Math.sin(t * (gale ? 22 : 12) + p) * 0.6;
-            if (gale) { // facing into the wind, going backwards
-              const x = ((cx + R * Math.cos(a) * 0.4 + t * 2.5 + 20) % 40 + 40) % 40 - 20;
-              bird.position.set(x, cy + dy + Math.sin(t * 3 + p) * 0.4, cz + R * Math.sin(a) * 0.3);
-              bird.rotation.set(Math.sin(t * 4 + p) * 0.2, -Math.PI / 2, Math.sin(t * 5 + p) * 0.3);
-            } else {
-              bird.position.set(cx + R * Math.cos(a), cy + dy + Math.sin(t * 1.3 + p) * 0.3, cz + R * Math.sin(a) * 0.6);
-              bird.rotation.y = -a + (w < 0 ? Math.PI : 0);
-            }
-            wings[0].rotation.z = -f; wings[1].rotation.z = f;
-          });
-        }
-      }
-    }
-    if (v.animals === "fish") {
-      const scales = flat(0xf08a3c), bodyGeo = new THREE.SphereGeometry(0.3, 7, 5), tailGeo = new THREE.ConeGeometry(0.2, 0.3, 4), mouthGeo = new THREE.SphereGeometry(0.08, 5, 4);
-      for (let i = 0; i < 10; i++) {
-        const fish = new THREE.Group(), body = new THREE.Mesh(bodyGeo, scales), tail = new THREE.Mesh(tailGeo, scales), mouth = new THREE.Mesh(mouthGeo, dark);
-        body.scale.set(1.6, 1, 0.6);
-        tail.rotation.z = -Math.PI / 2;
-        tail.position.x = -0.6;
-        mouth.position.x = 0.47;
-        fish.add(body, tail, mouth);
-        for (const sz of [-1, 1]) { const eye = googly(0.08, 0.25, 0.08, sz * 0.15); eye.rotation.y = sz > 0 ? 0 : Math.PI; fish.add(eye); }
-        fish.scale.setScalar(1.3);
-        fish.rotation.order = "YXZ"; // yaw, then roll about its own length, then pitch
-        add(fish);
-        const x0 = rand(-12, 12), z = rand(-12, -2), y0 = this.groundY(x0, z), T = rand(2.5, 4), p = rand(0, 10), h = rand(1.2, 2.5);
-        if (water) this.movers.push((t) => {
-          // Leap back and forth between two spots, waiting under water in between.
-          const n = Math.floor((t + p) / T), u = (t + p) / T - n, d = n % 2 ? -1 : 1, a = Math.min(1, u / 0.45);
-          fish.position.set(x0 + d * (2 * a - 1), u < 0.45 ? 4 * h * a * (1 - a) : -0.6, z);
-          fish.rotation.set(0, d > 0 ? 0 : Math.PI, Math.atan(2 * h * (1 - 2 * a)));
-        });
-        else this.movers.push((t) => {
-          // Out of water: lying on its side, gasping, and every so often a hopeless flip onto the other side.
-          const F = 1.4, n = Math.floor((t + p) / F), u = (t + p) / F - n, flip = Math.min(1, u / 0.3);
-          fish.position.set(x0, y0 + 0.25 + (u < 0.3 ? Math.sin(flip * Math.PI) * 0.6 : 0), z);
-          fish.rotation.set(Math.PI / 2 + Math.PI * (n + flip), Math.sin(n * 12.9898 + p) * 1.2, 0);
-          mouth.scale.y = 0.4 + Math.abs(Math.sin(t * 6 + p)) * 1.4;
-        });
-      }
-    }
-    if (v.animals === "snails") {
-      const shellMat = flat(0xd9a05b), skin = flat(0xc9cf8a);
-      for (let i = 0; i < 4; i++) {
-        const snail = new THREE.Group(), stalks = [];
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.3, 0.55), skin);
-        foot.position.y = 0.15;
-        const shell = new THREE.Mesh(new THREE.SphereGeometry(0.75, 9, 7), shellMat);
-        shell.position.set(-0.2, 0.85, 0);
-        shell.scale.z = 0.7;
-        snail.add(foot, shell);
-        for (const sz of [-1, 1]) { // a spiral on each side of the shell
-          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.06, 4, 12), dark);
-          ring.position.set(-0.2, 0.85, sz * 0.48);
-          snail.add(ring);
-        }
-        for (const sz of [-0.12, 0.12]) {
-          const stalk = new THREE.Group();
-          const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.6, 5), skin);
-          rod.position.y = 0.3;
-          const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 5), dark);
-          eye.position.y = 0.62;
-          stalk.add(rod, eye);
-          stalk.position.set(0.8, 0.3, sz);
-          stalk.rotation.x = sz * 2;
-          snail.add(stalk);
-          stalks.push(stalk);
-        }
-        snail.scale.setScalar(1.4);
-        const x0 = rand(-11, 11), z = rand(-12, -3), p = rand(0, 6), d = rng() < 0.5 ? 1 : -1;
-        snail.rotation.y = d > 0 ? 0 : Math.PI;
-        add(snail);
-        this.movers.push((t) => {
-          const x = x0 + d * (((t * 0.15 + p) % 6) - 3); // a long, slow crawl, or a long, slow drift
-          snail.position.set(x, water ? -0.35 + Math.sin(t * 1.4 + p) * 0.08 : this.groundY(x, z), z);
-          snail.rotation.z = water ? Math.sin(t * 1.1 + p) * 0.12 : 0;
-          stalks.forEach((s, k) => { s.rotation.z = -0.25 + Math.sin(t * 1.5 + p + k * 2) * 0.2; });
-        });
-      }
-    }
-    if (v.animals === "octopuses") {
-      const skin = flat(0xb565a7), armGeo = new THREE.CylinderGeometry(0.07, 0.12, 0.9, 5);
-      const glass = new THREE.MeshStandardMaterial({ color: 0xd8f2ff, transparent: true, opacity: 0.3, depthWrite: false });
-      const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }), bubbleGeo = new THREE.SphereGeometry(0.06, 5, 4);
-      for (let i = 0; i < 5; i++) {
-        const octo = new THREE.Group(), arms = [], bubbles = [];
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 9, 7), skin);
-        head.scale.y = 1.25;
-        head.position.y = 1.3;
-        octo.add(head, googly(0.14, -0.2, 1.25, 0.48), googly(0.14, 0.2, 1.25, 0.48));
-        for (let k = 0; k < 8; k++) { // arms splay outwards all round, each in its own plane
-          const a = k / 8 * Math.PI * 2, pivot = new THREE.Group(), arm = new THREE.Mesh(armGeo, skin);
-          arm.position.y = -0.45;
-          pivot.add(arm);
-          pivot.position.set(Math.cos(a) * 0.3, 0.85, Math.sin(a) * 0.3);
-          pivot.rotation.y = -a;
-          octo.add(pivot);
-          arms.push(pivot);
-        }
-        if (!water) { // on land it wears a fishbowl, with bubbles going up
-          const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.95, 14, 10), glass);
-          bowl.position.y = 1.35;
-          octo.add(bowl);
-          for (let k = 0; k < 3; k++) { const b = new THREE.Mesh(bubbleGeo, bubbleMat); octo.add(b); bubbles.push(b); }
-        }
-        octo.scale.setScalar(1.2);
-        const x0 = rand(-11, 11), z = rand(-12, -3), p = rand(0, 6);
-        octo.rotation.y = rand(-0.5, 0.5);
-        add(octo);
-        octo.traverse((o) => { if (o.material === glass || o.material === bubbleMat) o.castShadow = false; }); // glass casts no shadow
-        if (water) this.movers.push((t) => { // just the top of its head and its eyes above the surface, now and then ducking under
-          octo.position.set(x0 + Math.sin(t * 0.3 + p) * 2, -1.3 + Math.sin(t * 0.9 + p) * 0.3, z);
-        });
-        else this.movers.push((t) => { // a wobbly, unsteady walk, arms flailing
-          const x = x0 + Math.sin(t * 0.3 + p) * 2;
-          octo.position.set(x, this.groundY(x, z) + Math.abs(Math.sin(t * 2 + p)) * 0.15, z);
-          octo.rotation.z = Math.sin(t * 2 + p) * 0.12;
-          arms.forEach((arm, k) => { arm.rotation.z = 0.6 + Math.sin(t * 6 + k * 1.7 + p) * 0.4; });
-          bubbles.forEach((b, k) => { const u = (t * 0.5 + k / 3 + p) % 1; b.position.set(Math.sin(u * 9 + k) * 0.2, 1.0 + u * 0.9, 0.7); });
-        });
-      }
-    }
-    if (v.animals === "snakes") {
-      const skin = flat(0x5f9e45), band = flat(0xe0c050), red = flat(0xd8434f);
-      const N = 16, R = 0.24, segGeo = new THREE.SphereGeometry(R, 7, 5);
-      const size = (k) => 1 - (k / N) * 0.7, gap = [0.3]; // how far behind the head each segment is: touching all the way down
-      for (let k = 1; k < N; k++) gap[k] = gap[k - 1] + R * (size(k - 1) + size(k)) * 0.85;
-      for (let i = 0; i < 6; i++) {
-        const snake = new THREE.Group(), segs = [];
-        for (let k = 0; k < N; k++) { // tapering to the tail
-          const seg = new THREE.Mesh(segGeo, k % 3 === 2 ? band : skin);
-          seg.scale.setScalar(size(k));
-          snake.add(seg);
-          segs.push(seg);
-        }
-        const head = new THREE.Group(), skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), skin);
-        skull.scale.set(1.4, 0.75, 1);
-        head.add(skull);
-        for (const sz of [-1, 1]) { const eye = googly(0.09, 0.12, 0.15, sz * 0.2); eye.rotation.y = sz > 0 ? 0.8 : Math.PI - 0.8; head.add(eye); }
-        const tongue = new THREE.Group(), stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.04), red);
-        stem.position.x = 0.15;
-        tongue.add(stem);
-        for (const a of [-0.5, 0.5]) { // the fork
-          const prong = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.03), red);
-          prong.position.set(0.34, 0, a * 0.08);
-          prong.rotation.y = -a;
-          tongue.add(prong);
-        }
-        tongue.position.set(0.38, -0.05, 0);
-        head.add(tongue);
-        snake.add(head);
-        add(snake);
-        const p = rand(0, 20), flick = (t) => { tongue.scale.x = Math.sin(t * 1.3 + p) > 0.5 ? Math.abs(Math.sin(t * 25)) : 0.01; };
-        // Slithers along, its body following the same S-shaped path its head took; in water, head up, swimming.
-        const z = rand(-12, -3), d = rng() < 0.5 ? 1 : -1, A = 0.35, c = 1.6;
-        this.movers.push((t) => {
-          const s = t * 0.9 + p, x = d * ((s % 32) - 16);
-          const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : this.groundY(wx, z) + R * segs[k].scale.x;
-          segs.forEach((seg, k) => { const wx = x - d * gap[k]; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - gap[k]))); });
-          head.position.set(x, water ? 0.5 : this.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));
-          head.rotation.set(0, (d > 0 ? 0 : Math.PI) - Math.atan(A * c * Math.cos(c * s)), 0);
-          flick(t);
-        });
-      }
-    }
-
-    // Wind: streaks blowing past.
-    reseed(6);
-    if (W) for (let i = 0; i < W.streaks; i++) {
-      const s = add(new THREE.Mesh(new THREE.BoxGeometry(rand(2, 4), 0.03, 0.03), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })), false);
-      const y = rand(0.5, 7), z = rand(-12, 1);
-      let x = rand(-20, 20);
-      this.movers.push((t) => { x += W.speed * (1 + gust(t)) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
-    }
-
-    // Weather
-    reseed(7);
-    if (v.weather === "rain") {
-      const count = 500, pos = new Float32Array(count * 6);
-      for (let i = 0; i < count; i++) { const x = rand(-18, 18), y = rand(0, 14), z = rand(-18, 4); pos.set([x, y, z, x, y + 0.4, z], i * 6); }
-      const rain = add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3)),
-        new THREE.LineBasicMaterial({ color: 0x5f7390, transparent: true, opacity: 0.6 })), false);
-      this.movers.push(() => {
-        const a = rain.geometry.attributes.position.array;
-        for (let i = 0; i < count; i++) { const y = (a[i * 6 + 1] - 0.22 + 14) % 14; a[i * 6 + 1] = y; a[i * 6 + 4] = y + 0.4; }
-        rain.geometry.attributes.position.needsUpdate = true;
-      });
-    }
-    if (v.weather === "snow") {
-      const count = 600, pos = new Float32Array(count * 3);
-      for (let i = 0; i < count; i++) pos.set([rand(-18, 18), rand(0, 14), rand(-18, 4)], i * 3);
-      const snow = add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3)),
-        new THREE.PointsMaterial({ color: 0xffffff, size: 0.16 })), false);
-      this.movers.push((t) => {
-        const a = snow.geometry.attributes.position;
-        for (let i = 0; i < count; i++) { a.array[i * 3 + 1] = (a.array[i * 3 + 1] - 0.018 + 14) % 14; a.array[i * 3] += Math.sin(t * 0.8 + i) * 0.006; }
-        a.needsUpdate = true;
-      });
-    }
-    // At night, little lights drift about low over the ground, each glowing and fading in its own time.
-    reseed(8);
-    if (v.suns === "no sun") {
-      const c = document.createElement("canvas");
-      c.width = c.height = 64;
-      const g = c.getContext("2d"), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-      grad.addColorStop(0, "rgba(255,255,220,1)"); grad.addColorStop(0.2, "rgba(255,240,150,.8)"); grad.addColorStop(1, "rgba(255,220,100,0)");
-      g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
-      const glow = new THREE.CanvasTexture(c);
-      for (let i = 0; i < 40; i++) {
-        const light = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })), false);
-        light.scale.setScalar(rand(0.25, 0.45));
-        const x = rand(-12, 12), y = rand(0.4, 3.5), z = rand(-14, 2), p = rand(0, 20), f = rand(0.3, 0.7);
-        this.movers.push((t) => {
-          light.position.set(x + 1.5 * Math.sin(t * f * 0.5 + p), y + 0.5 * Math.sin(t * f + p * 2), z + 1.2 * Math.cos(t * f * 0.4 + p));
-          light.material.opacity = 0.25 + 0.75 * Math.max(0, Math.sin(t * f * 2 + p));
-        });
-      }
-    }
-    rng = Math.random; // movers that respawn at run time, and the ambassador, stay properly random
+    buildLandscape(this, v, P, W, sky, add);
+    buildAnimals(this, v, add);
+    reseed(); // movers that respawn at run time, and the ambassador, stay properly random
   }
+
+  // Each section of the world draws from its own random stream, so adding one fact never reshuffles another's part.
+  reseed(k) { reseed(this.seed + k); }
 
   tick() {}
 
@@ -492,8 +112,11 @@ export class WorldView {
   }
 }
 
-// The world view with a goofy, randomly assembled ambassador in it. pose: "idle" | "drawing" | "raised".
-// Without a board canvas the ambassador just stands there (the guesser).
+// The world view with a goofy, randomly assembled ambassador in it. pose: "idle" | "drawing" | "raised" | "looking".
+// The head's nod, turn and tilt when peering through the telescope.
+const PEER = new THREE.Euler(0.12, 0.15, -0.2);
+
+// Without a board canvas the ambassador holds a telescope instead (the guesser).
 export class Scene extends WorldView {
   constructor(container, boardCanvas, hue) {
     super(container);
@@ -501,33 +124,80 @@ export class Scene extends WorldView {
     this.buildAmbassador(boardCanvas, hue);
   }
 
+  // Over water the ambassador gets a rock to stand on (it is an envoy, not a messiah), and it dresses for the rest
+  // of the facts. The gear was all built hidden, so this only shows the right bits, however often it is called.
+  showWorld(v) {
+    super.showWorld(v);
+    if (!this.gear) return; // the first call comes from the WorldView constructor, before the ambassador exists
+    const G = this.gear, snow = v.weather === "snow", rain = v.weather === "rain", dark = v.suns === "no sun", wet = v.terrain === "water";
+    this.hot = v.suns === "three suns";
+    this.gale = v.wind === "a gale";
+    this.pad.visible = wet;
+    this.body.position.y = wet ? 0.1 : 0;
+    G.bobble.visible = G.scarf.visible = snow;
+    G.souwester.visible = rain;
+    G.sunhat.visible = this.hot && !snow && !rain; // one hat at a time: the woolly or the sou'wester wins
+    if (this.topper) this.topper.visible = !(snow || rain || this.hot); // and the bowler or flower comes off for any of them
+    this.headTop = snow ? this.crown + 0.45 : rain || this.hot ? this.crown + 0.3 : this.headTop0;
+    if (this.monocle) this.monocle.visible = !this.hot; // not over the shades
+    G.shades.visible = this.hot;
+    if (G.fan) G.fan.visible = this.hot;
+    G.torch.visible = dark;
+    for (const e of this.eyes) e.material = dark ? this.glow : WHITE;
+    G.wellies.visible = G.ring.visible = wet;
+    for (const f of this.feet) f.material = wet ? this.wool : DARK;
+  }
+
   buildAmbassador(boardCanvas, hue) {
     const skin = flat(col(hue, 0.55, 0.58)), belly = flat(col(hue + 0.08, 0.5, 0.78));
-    const dark = flat(0x3a3560), white = flat(0xffffff);
+    const dark = DARK, white = WHITE;
     this.body = new THREE.Group();
     this.body.scale.setScalar(boardCanvas ? 1.25 : 1.1);
     this.scene.add(this.body);
+    this.pad = shade(new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.1, 0.2, 7), flat(0x8a8277)));
+    this.pad.visible = false;
+    this.scene.add(this.pad);
 
-    // Torso: tall and thin, short and wide, or round. Two legs with feet.
-    const tw = rand(0.8, 1.5), th = rand(0.9, 1.6);
-    const torso = new THREE.Mesh(pick([new THREE.BoxGeometry(tw, th, 0.7), new THREE.CylinderGeometry(tw / 2, tw / 2 + 0.15, th, 7), new THREE.SphereGeometry(Math.max(tw, th) / 2, 7, 5)]), skin);
-    torso.position.y = 0.5 + th / 2;
-    const patch = new THREE.Mesh(new THREE.CircleGeometry(tw * 0.28, 6), belly);
-    patch.position.set(0, 0.5 + th / 2, 0.36 + (tw > 1.2 ? 0.1 : 0));
-    this.body.add(torso, patch);
+    // Torso: tall and thin, short and wide, or round. Each shape says where its top, shoulders and front are and
+    // how wide its middle is, so the neck, arms, belly and rubber ring land on it whatever it is. Two legs with
+    // feet, the feet hinged at the heel.
+    const tw = rand(0.8, 1.5), th = rand(0.9, 1.6), mid = 0.5 + th / 2, R = Math.max(tw, th) / 2;
+    const T = pick([
+      { geo: new THREE.BoxGeometry(tw, th, 0.7), top: 0.5 + th, shx: tw / 2, shy: 0.42 + th, front: 0.35, girth: tw / 2 },
+      { geo: new THREE.CylinderGeometry(tw / 2, tw / 2 + 0.15, th, 7), top: 0.5 + th, shx: tw * 0.45 + 0.02, shy: 0.42 + th, front: (tw / 2 + 0.075) * 0.85, girth: tw / 2 + 0.075 },
+      { geo: new THREE.SphereGeometry(R, 7, 5), top: mid + R, shx: R * 0.75, shy: mid + R * 0.55, front: R * 0.8, girth: R },
+    ]);
+    const torso = new THREE.Mesh(T.geo, skin);
+    torso.position.y = mid;
+    const patch = new THREE.Mesh(new THREE.SphereGeometry(tw * 0.28, 7, 5), belly); // a belly bump, so it shows on any shape
+    patch.scale.z = 0.4;
+    patch.position.set(0, mid, T.front);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.42, 6), skin);
+    neck.position.y = T.top + 0.09; // runs from inside the torso to inside the head
+    this.body.add(torso, patch, neck);
+    this.feet = [];
     for (const sx of [-tw * 0.22, tw * 0.22]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.5, 5), dark);
-      leg.position.set(sx, 0.3, 0);
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.42), dark);
-      foot.position.set(sx, 0.07, 0.08);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.6, 5), dark);
+      leg.position.set(sx, 0.35, 0);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.42).translate(0, 0, 0.21), dark);
+      foot.position.set(sx, 0.07, -0.13);
       this.body.add(leg, foot);
+      this.feet.push(foot);
     }
-    const neck = 0.5 + th;
 
-    // Head: a random shape with 1-3 googly eyes, a mouth, and 0-2 antennae.
+    // Head: a random shape with 1-3 googly eyes, a mouth, and 0-2 antennae. Each shape says how far the chin and
+    // top are from its centre, where its front is at mouth height, and how far back the faces either side of the
+    // front slope (`bend`), so it sits in the neck with the mouth on it. `band` is how wide a headband round the
+    // brow must be, and `sink` how far below the top a wide hat brim settles (a lot on a round head).
     const hr = rand(0.45, 0.65);
-    this.head = new THREE.Mesh(pick([new THREE.IcosahedronGeometry(hr, 0), new THREE.SphereGeometry(hr, 8, 6), new THREE.BoxGeometry(hr * 1.7, hr * 1.5, hr * 1.7), new THREE.CylinderGeometry(hr * 0.7, hr, hr * 1.8, 6)]), skin);
-    this.head.position.y = neck + hr;
+    const H = pick([
+      { geo: new THREE.IcosahedronGeometry(hr, 0), chin: hr * 0.85, top: hr * 0.85, lip: hr * 0.85, bend: 0.36, band: 0.8, sink: 0.08 },
+      { geo: new THREE.SphereGeometry(hr, 8, 6), chin: hr, top: hr, lip: hr * 0.89, bend: 0.4, band: 0.85, sink: 0.1 },
+      { geo: new THREE.BoxGeometry(hr * 1.7, hr * 1.5, hr * 1.7), chin: hr * 0.75, top: hr * 0.75, lip: hr * 0.85, bend: 0, band: 0.95, sink: 0.01 },
+      { geo: new THREE.CylinderGeometry(hr * 0.7, hr, hr * 1.8, 6), chin: hr * 0.9, top: hr * 0.9, lip: hr * 0.92, bend: 0.52, band: 0.7, sink: 0.01 },
+    ]);
+    this.head = new THREE.Mesh(H.geo, skin);
+    this.head.position.y = T.top + 0.15 + H.chin; // the chin a little way up the neck
     this.body.add(this.head);
     this.eyes = [];
     const ne = pick([1, 2, 2, 2, 3]), es = rand(0.11, 0.2);
@@ -540,44 +210,181 @@ export class Scene extends WorldView {
       this.head.add(eye);
       this.eyes.push(eye);
     }
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(rand(0.15, 0.4), 0.06, 0.05), dark);
-    mouth.position.set(0, -hr * 0.4, hr * 0.95);
-    this.head.add(mouth);
+    // The mouth is level, in two halves hinged on the ridge down the front and bent back to hug the face on
+    // each side (flat on the box), deep enough to stay inside the head out to its ends.
+    const mw = rand(0.15, 0.4);
+    for (const s of [-1, 1]) {
+      const half = new THREE.Group();
+      half.position.set(0, -hr * 0.4, H.lip + 0.02);
+      half.rotation.y = s * H.bend;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(mw / 2, 0.06, 0.3), dark);
+      bar.position.set(s * mw / 4, 0, -0.15);
+      half.add(bar);
+      this.head.add(half);
+    }
     this.antennae = [];
     const na = pick([0, 1, 1, 2]);
     for (let i = 0; i < na; i++) {
       const a = new THREE.Group();
-      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.7, 4), dark);
-      stalk.position.y = 0.35;
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 4), dark);
+      stalk.position.y = 0.45;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), belly);
-      ball.position.y = 0.75;
+      ball.position.y = 0.95;
       a.add(stalk, ball);
-      a.position.set(na === 1 ? 0 : (i ? 0.25 : -0.25), hr * 0.9, 0);
-      a.rotation.z = na === 1 ? 0 : (i ? -0.3 : 0.3);
+      a.position.set(na === 1 ? 0 : (i ? 0.25 : -0.25), hr * 0.4, 0); // rooted well inside the head
+      a.rotation.z = a.userData.spread = na === 1 ? 0 : (i ? -0.3 : 0.3);
       this.head.add(a);
       this.antennae.push(a);
     }
     this.headTop = hr * 1.05; // the speech bubble sits on the head itself; antennae poke up behind it
 
-    // Arms pivot at the shoulders, end in a hand, and reach just behind the board's bottom corners.
+    // One accessory each, for charm: a bow tie, a bowler, a monocle or a flower.
+    const trinket = pick(["bowtie", "hat", "monocle", "flower"]);
+    if (trinket === "bowtie") { // at the front of the neck, just under the chin
+      const bow = new THREE.Group();
+      for (const s of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.06), belly);
+        wing.position.x = s * 0.1;
+        wing.rotation.z = s * 0.15;
+        bow.add(wing);
+      }
+      bow.add(new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 4), dark));
+      bow.position.set(0, T.top + 0.07, 0.13);
+      this.body.add(bow);
+    }
+    if (trinket === "hat") { // a bowler, its brim sunk a touch into the crown of the head so it sits on every shape
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 10), dark);
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.22, 10), dark);
+      brim.position.y = H.top - 0.01;
+      crown.position.y = H.top + 0.1;
+      this.topper = new THREE.Group();
+      this.topper.add(brim, crown);
+      this.head.add(this.topper);
+      this.headTop = H.top + 0.24;
+    }
+    if (trinket === "monocle") { // around the left eye, on a string
+      const e = this.eyes[0].position;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(es * 1.15, 0.02, 5, 12), dark);
+      ring.position.set(e.x, e.y, e.z + es * 0.45);
+      const string = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 4), dark);
+      string.position.set(e.x - es * 1.1, e.y - es * 1.15 - 0.13, ring.position.z);
+      string.rotation.z = 0.25;
+      this.monocle = new THREE.Group();
+      this.monocle.add(ring, string);
+      this.head.add(this.monocle);
+    }
+    if (trinket === "flower") { // grows out of the top of the head and leans over the brow, away from the antennae
+      const f = new THREE.Group(), bloom = new THREE.Group();
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 4), dark);
+      stalk.position.y = 0.2;
+      for (let i = 0; i < 5; i++) {
+        const petal = new THREE.Mesh(new THREE.SphereGeometry(0.06, 5, 4), belly);
+        petal.position.set(Math.cos(i * 1.257) * 0.08, Math.sin(i * 1.257) * 0.08, 0);
+        bloom.add(petal);
+      }
+      bloom.add(new THREE.Mesh(new THREE.SphereGeometry(0.05, 5, 4), white));
+      bloom.position.y = 0.4;
+      bloom.rotation.x = -0.3;
+      f.add(stalk, bloom);
+      f.position.set(0, H.top - 0.15, 0.05);
+      f.rotation.x = -0.7;
+      this.topper = f;
+      this.head.add(f);
+    }
+
+    // Arms pivot at the shoulders under a blob that covers the joint, end in a hand, and reach just behind the
+    // board's bottom corners. The guesser's are as long as it takes to hold a telescope to its outer right eye.
+    this.teleEye = this.eyes.at(-1);
+    this.es = es;
+    this.al = 1.1;
+    if (!boardCanvas) {
+      const eye = this.teleEye.position.clone().applyEuler(PEER).add(this.head.position);
+      this.al = Math.max(1.1, eye.distanceTo(new THREE.Vector3(T.shx + 0.06, T.shy, 0)) + 0.25);
+    }
     this.arms = [];
-    for (const sx of [-(tw / 2 + 0.15), tw / 2 + 0.15]) {
+    for (const side of [-1, 1]) {
       const pivot = new THREE.Group();
-      pivot.position.set(sx, neck - 0.1, 0);
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1, 5), skin);
-      arm.position.y = -0.55;
+      pivot.position.set(side * (T.shx + 0.06), T.shy, 0);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, this.al, 5), skin);
+      arm.position.y = -this.al / 2;
       const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5), belly);
-      hand.position.y = -1.1;
-      pivot.add(arm, hand);
+      hand.position.y = -this.al;
+      pivot.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 5), skin), arm, hand);
       this.body.add(pivot);
       this.arms.push(pivot);
     }
+
+    // Dressing for the weather, all built now and hidden; showWorld shows what the facts call for. The woollens
+    // and rubber are one knitted red. The weather hats hang off one pivot so a gale can lift the brim.
+    const wool = this.wool = flat(0xc8503a), G = this.gear = {};
+    const at = (m, x, y, z) => { m.position.set(x, y, z); return m; };
+    this.hats = new THREE.Group();
+    this.head.add(this.hats);
+    const hat = (...parts) => { const g = new THREE.Group(); g.add(...parts); g.visible = false; this.hats.add(g); return g; };
+    const ht = H.top - H.sink; // where a brim sits
+    // Snow: a bobble hat, and a scarf whose tail is laid back down the torso from the nape.
+    G.bobble = hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.3, 0.32, 8), wool), 0, ht + 0.15, 0),
+      at(new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.1, 8), white), 0, ht, 0), at(new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), white), 0, ht + 0.35, 0));
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.09, 6, 10), wool);
+    scarf.rotation.x = Math.PI / 2;
+    this.scarfTail = new THREE.Group();
+    this.scarfTail.add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 0.05).translate(0, -0.25, 0), wool));
+    this.scarfTail.position.z = -0.2;
+    this.scarfTail.rotation.x = Math.asin(Math.min(0.85, (T.front - 0.12) / 0.5));
+    G.scarf = new THREE.Group();
+    G.scarf.add(scarf, this.scarfTail);
+    G.scarf.position.y = T.top + 0.1;
+    // Rain: a sou'wester, the brim longer at the back.
+    const brim = at(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.04, 10), belly), 0, ht, -0.1);
+    brim.scale.z = 1.25;
+    G.souwester = hat(brim, at(new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), belly), 0, ht - 0.01, 0));
+    // Three suns: a wide sun hat, shades across however many eyes there are, and a fan for the hand that is free.
+    G.sunhat = hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.03, 10), white), 0, ht, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.16, 10), belly), 0, ht + 0.08, 0));
+    G.shades = at(new THREE.Mesh(new THREE.BoxGeometry(this.teleEye.position.x * 2 + es * 2.8, es * 1.5 + (ne === 3 ? es : 0), 0.12), dark), 0, 0.05 + (ne === 3 ? es / 2 : 0), hr * 0.85 + es * 0.6);
+    this.head.add(G.shades);
+    if (!boardCanvas) {
+      G.fan = at(new THREE.Mesh(new THREE.CircleGeometry(0.25, 7, 0, Math.PI), new THREE.MeshStandardMaterial({ color: belly.color, flatShading: true, side: THREE.DoubleSide })), 0, -this.al + 0.08, 0.06);
+      G.fan.rotation.x = 2.0; // faces the camera once the arm is up
+      this.arms[0].add(G.fan);
+    }
+    // No sun: a head torch on a band, with a little light on the face; the eyes glow too (showWorld swaps them).
+    this.glow = new THREE.MeshStandardMaterial({ color: 0xfff6c0, emissive: 0xfff0a0, emissiveIntensity: 0.9, flatShading: true });
+    const band = new THREE.Mesh(new THREE.TorusGeometry(hr * H.band, 0.03, 5, 12), dark);
+    band.rotation.x = Math.PI / 2;
+    G.torch = new THREE.Group();
+    G.torch.add(band, at(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.1), this.glow), 0, 0, hr * H.band + 0.03), at(new THREE.PointLight(0xfff0b0, 2, 4), 0, 0, hr * 1.3));
+    G.torch.position.y = hr * 0.55; // across the brow, above the eyes
+    this.head.add(G.torch);
+    // Water: wellies (the feet turn red in showWorld) and a rubber ring. It stands on a rock, but one can't be too careful.
+    G.wellies = new THREE.Group();
+    for (const f of this.feet) G.wellies.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.145, 0.36, 6), wool), f.position.x, 0.26, 0));
+    G.ring = new THREE.Mesh(new THREE.TorusGeometry(T.girth + 0.08, 0.12, 7, 14), wool);
+    G.ring.rotation.x = Math.PI / 2;
+    G.ring.position.y = mid;
+    this.body.add(G.scarf, G.wellies, G.ring);
+    for (const g of [G.scarf, G.shades, G.torch, G.wellies, G.ring, G.fan]) if (g) g.visible = false;
+    this.crown = H.top; this.headTop0 = this.headTop; // where the bubble goes with and without a weather hat
     shade(this.body);
     this.gaze = { y: 0, z: 0, next: 0 };
     this.blinkAt = rand(1, 4);
-    this.boardY = neck - 0.6;
+    this.boardY = T.top - 0.6;
     this.buildBubble();
-    if (!boardCanvas) return;
+    if (!boardCanvas) {
+      // A brass spyglass, eyepiece at its origin and the lens 0.65 along +z; tick keeps it in the right hand.
+      const brass = flat(0xb08d57);
+      const tube = (r, z0, z1, mat = brass) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, z1 - z0, 8), mat); m.rotation.x = Math.PI / 2; m.position.z = (z0 + z1) / 2; return m; };
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.08, 8), flat(0xdcedf4));
+      lens.position.z = 0.651;
+      this.tele = new THREE.Group();
+      this.tele.add(tube(0.07, -0.02, 0.06, dark), tube(0.06, 0.06, 0.36), tube(0.085, 0.36, 0.65), lens);
+      this.body.add(shade(this.tele));
+      this.teleU = new THREE.Vector3(0, -1, 0); // which way the tube points, and how far down it the hand is
+      this.grip = 0.3;
+      // At rest the arms hang a little forward, more if they are so long they would otherwise drag.
+      this.restX = -Math.max(0.2, Math.acos(Math.min(1, (T.shy - 0.2) / this.al)));
+      for (const a of this.arms) a.rotation.x = this.restX;
+      return;
+    }
     this.boardTex = new THREE.CanvasTexture(boardCanvas);
     this.boardTex.colorSpace = THREE.SRGBColorSpace;
     this.boardGroup = new THREE.Group();
@@ -588,6 +395,10 @@ export class Scene extends WorldView {
     face.position.z = 0.035;
     this.boardGroup.add(frame, face);
     this.body.add(this.boardGroup);
+    // Start in the idle pose, rather than have the board and arms swing out from inside the torso.
+    this.boardGroup.position.set(0, this.boardY, 1.25);
+    this.boardGroup.rotation.x = -0.3;
+    for (const a of this.arms) a.rotation.x = -1.1;
   }
 
   boardChanged() { if (this.boardTex) this.boardTex.needsUpdate = true; }
@@ -625,24 +436,59 @@ export class Scene extends WorldView {
   tick(t) {
     if (!this.body) return; // the render loop starts before the ambassador is built
     const lerp = (a, b, k = 0.08) => a + (b - a) * k;
-    const P = this.pose;
+    const P = this.pose, look = P === "looking";
     // Breathing, a slow shift of weight, and a glance somewhere new every few seconds.
     const base = this.boardGroup ? 1.25 : 1.1;
     this.body.scale.y = base * (1 + Math.sin(t * 1.6) * 0.012);
-    this.body.rotation.z = Math.sin(t * 0.4) * 0.015;
+    this.lean = lerp(this.lean ?? 0, this.gale && P !== "raised" ? 0.08 : 0, 0.05); // into the wind (it blows towards +x), but stands straight for the camera
+    this.body.rotation.z = Math.sin(t * 0.4) * 0.015 + this.lean;
     if (t > this.gaze.next) this.gaze = { y: rand(-0.45, 0.45), z: rand(-0.08, 0.08), next: t + rand(1.5, 4) };
-    const gy = P === "drawing" ? Math.sin(t * 3) * 0.12 : this.gaze.y;
+    const gy = P === "drawing" ? Math.sin(t * 3) * 0.12 : look ? PEER.y : this.gaze.y;
     this.head.rotation.y = lerp(this.head.rotation.y, gy, 0.05);
-    this.head.rotation.x = lerp(this.head.rotation.x, P === "drawing" ? 0.25 : 0, 0.05);
-    this.head.rotation.z = lerp(this.head.rotation.z, P === "raised" ? 0.25 : this.gaze.z, 0.05);
+    this.head.rotation.x = lerp(this.head.rotation.x, P === "drawing" ? 0.25 : look ? PEER.x : 0, 0.05);
+    this.head.rotation.z = lerp(this.head.rotation.z, P === "raised" ? 0.25 : look ? PEER.z : this.gaze.z, 0.05);
     if (t > this.blinkAt + 0.12) this.blinkAt = t + rand(2, 6);
     const blink = t > this.blinkAt ? 0.1 : 1;
-    for (const e of this.eyes) e.scale.y = blink;
-    for (const [i, a] of this.antennae.entries()) a.rotation.x = Math.sin(t * 2.5 + i) * 0.1;
+    // Peering through the telescope, every eye but the one at it squints.
+    this.squint = lerp(this.squint ?? 1, look ? 0.3 : 1, 0.1);
+    for (const e of this.eyes) e.scale.y = Math.min(blink, e === this.teleEye ? 1 : this.squint);
+    // In a gale the antennae bend downwind, the hat brim lifts and the scarf streams; otherwise antennae just wobble.
+    const gale = this.gale ? 1 : 0;
+    for (const [i, a] of this.antennae.entries()) {
+      a.rotation.x = Math.sin(t * 2.5 + i) * 0.1;
+      a.rotation.z = lerp(a.rotation.z, a.userData.spread - gale * (0.9 + Math.sin(t * 7 + i) * 0.12), 0.05);
+    }
+    this.hats.rotation.x = lerp(this.hats.rotation.x, gale * (-0.2 + Math.sin(t * 6) * 0.08), 0.05);
+    this.scarfTail.rotation.z = lerp(this.scarfTail.rotation.z, gale * (1.3 + Math.sin(t * 9) * 0.15), 0.05);
+    // Now and then a foot taps: the toe lifts off the heel a few times, then rests.
+    const tap = Math.sin(t * 0.25) > 0.95 ? Math.max(0, Math.sin(t * 9)) * 0.4 : 0;
+    this.feet[1].rotation.x = lerp(this.feet[1].rotation.x, -tap, 0.4);
     this.placeBubble();
 
-    if (!this.boardGroup) { // no board: arms hang and swing a little
-      for (const [i, a] of this.arms.entries()) a.rotation.x = lerp(a.rotation.x, Math.sin(t * 1.5 + i * Math.PI) * 0.12);
+    if (!this.boardGroup) { // no board: the left arm hangs and swings, the right holds the telescope
+      const swing = (i) => Math.sin(t * 1.5 + i * Math.PI) * 0.12;
+      const rest = (i) => new THREE.Quaternion().setFromEuler(new THREE.Euler(this.restX + swing(i), 0, 0));
+      // In the heat the free hand fans the face now and then; the fan is on the hand, shown by showWorld.
+      const fanning = this.hot && Math.sin(t * 0.3) > 0.2;
+      this.arms[0].quaternion.slerp(fanning ? new THREE.Quaternion().setFromEuler(new THREE.Euler(-2.1 + Math.sin(t * 9) * 0.15, 0, 0.45)) : rest(0), 0.08);
+      const S = this.arms[1].position, al = this.al;
+      let u = new THREE.Vector3(0.25, -0.45, 1).normalize(), grip = 0.3, q = rest(1); // lowered: the tube hangs forward from the hand
+      if (look) {
+        // The eyepiece goes to the eye and the tube points at the other screen, so the hand must be where the
+        // tube crosses the sphere the arm can reach: solve for how far down the tube that is, then aim the arm there.
+        const E = this.body.worldToLocal(this.teleEye.getWorldPosition(new THREE.Vector3()));
+        u = new THREE.Vector3(0.4, 0.1, 1).normalize(); // at the other screen, a touch off to the side so the tube shows its length
+        const d = E.clone().sub(S), p = u.dot(d);
+        const dh = -p + Math.sqrt(Math.max(0, p * p + al * al - d.lengthSq()));
+        q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), d.addScaledVector(u, dh).normalize());
+        grip = dh - this.es * 0.5; // the eyepiece rests on the front of the eyeball, not at its centre
+      }
+      this.arms[1].quaternion.slerp(q, 0.08);
+      this.teleU.lerp(u, 0.08).normalize();
+      this.grip = lerp(this.grip, grip);
+      const hand = new THREE.Vector3(0, -al, 0).applyQuaternion(this.arms[1].quaternion).add(S);
+      this.tele.position.copy(hand).addScaledVector(this.teleU, -this.grip);
+      this.tele.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), this.teleU);
       return;
     }
     const target = {

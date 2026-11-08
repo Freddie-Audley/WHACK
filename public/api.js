@@ -9,9 +9,9 @@ export async function loadKey() {
 }
 
 // The character. Every call speaks in this voice.
-const VOICE = `You are an alien ambassador making first contact with a stranger from another planet. Dry and deadpan, like a tired anthropologist's field notes: you take everything literally and state absurd conclusions as plain, settled fact. Never wink, never exaggerate. Every line is one short sentence, under 12 words. No exclamation marks, dashes, semicolons or colons.`;
+const VOICE = `You are a small alien ambassador meeting a stranger from another planet for the first time. Warm, polite and a little earnest, like a well-meaning guest, with a drop of dry, fond cheek: you call the stranger and their kind "the natives", the way a field guide would, and you are quietly sure your own planet does things more sensibly. You take everything literally, so your conclusions are sweetly wrong and said as plain fact. Everyday words, no big ones. Never mean, never pointing at the joke. Every line is one short sentence, under 12 words. No exclamation marks, dashes, semicolons or colons.`;
 
-const BOARD = `The whiteboard is 12x12 black-and-white pixels.`;
+const BOARD = `The whiteboard is 12x12 black-and-white pixels, written as 12 rows of 12 characters, "." white and "#" black.`;
 
 const listCategories = (cats) => cats.map((c) => `- ${c.id} (${c.label}): ${c.values.join(" / ")}`).join("\n");
 
@@ -44,24 +44,25 @@ async function call(system, content, schema, effort, timeout = 20000, attempt = 
   return JSON.parse(msg.content.find((b) => b.type === "text").text);
 }
 
-// Describer: one or more facts -> a single 12x12 pixel picture, plus what it mutters before and after.
+// Describer: one or more facts -> a single 12x12 pixel picture, plus what it says before drawing.
+// The spoken lines are "before" and "remark", never "thought": a field called thought trips the API's
+// reasoning-extraction refusal, which blocked most drawings.
 // Drawings are requested at the start of the game, so these can take their time.
 export async function draw({ facts }) {
   return call(
     `${VOICE}
-You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} A drawing is 12 rows of 12 characters, "." white and "#" black. No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board.`,
+You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board. When a fact is an absence (no sun, still air, no animals, nothing falling) the board must still not be blank: draw the place where it would be, like bare ground under an empty sky, or the stranger will see nothing.`,
     `Draw ${facts.length > 1 ? "all of this about home in one picture" : "this about home"}:
 ${facts.map((f) => `- ${f.category.label}: ${f.value}`).join("\n")}
-Also give "thought", said just before drawing: what you are about to draw and how and what you worry they will make of it (e.g. "Two circles for our suns, though they may read eyes." or "Wavy lines for our wind, since wind is invisible."). And "after", said once the board is down: a dry remark about life back home (e.g. "We lean when we walk and call it posture.").`,
+Also give "before", a line said out loud just before drawing: what you are about to draw and how, said plainly (e.g. "Two round suns, one bigger than the other." or "Wavy lines for our wind, which is hard to draw." or "An octopus now, this one takes a while."). Only now and then a doubt about how it will look, and never "I hope". Under 12 words.`,
     {
       type: "object",
       properties: {
         rows: { type: "array", items: { type: "string" }, description: "12 strings of 12 characters, only . and #" },
         note: { type: "string", description: "What the picture shows, a few words" },
-        thought: { type: "string" },
-        after: { type: "string" },
+        before: { type: "string" },
       },
-      required: ["rows", "note", "thought", "after"],
+      required: ["rows", "note", "before"],
       additionalProperties: false,
     },
     "medium",
@@ -69,12 +70,12 @@ Also give "thought", said just before drawing: what you are about to draw and ho
   );
 }
 
-// Guesser: photo of the describer's board -> what it says about their world, as one or more readings.
+// Guesser: the describer's board, read off the webcam as 12 rows of "." and "#" -> what it says about their world,
+// as one or more readings.
 // Called repeatedly while the board is up, as the drawing grows; `previous` is the last reading of this same board.
 // `believed` holds what earlier boards were taken to mean. Those facts are settled: a new board can only fill in
 // the categories still open, so a half-drawn (or blank) board never wipes out what earlier boards established.
-export async function interpret({ image, categories, believed, previous }) {
-  const [, mediaType, data] = image.match(/^data:(image\/\w+);base64,(.+)$/);
+export async function interpret({ grid, categories, believed, previous }) {
   const label = (id) => categories.find((c) => c.id === id).label;
   const list = (readings) => readings.map((r) => `${label(r.category)}: ${r.value}`).join(", ");
   const known = list(Object.values(believed));
@@ -82,17 +83,14 @@ export async function interpret({ image, categories, believed, previous }) {
   const cats = open.length ? open : categories; // everything known already: people kept drawing, so anything goes
   const out = await call(
     `${VOICE}
-The photo shows a stranger's whiteboard through a webcam, in black and white. ${BOARD} It may be unfinished, and one picture can show several facts about their world.`,
-    [
-      { type: "image", source: { type: "base64", media_type: mediaType, data } },
-      {
-        type: "text",
-        text: `Possible facts (category: values):
+You are looking at a stranger's whiteboard through a webcam. ${BOARD} It may be unfinished, and one picture can show several facts about their world.`,
+    `Their board right now:
+${grid.join("\n")}
+
+Possible facts (category: values):
 ${listCategories(cats)}
-${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.thought}". Update it if more has been drawn.\n` : ""}
-Give "readings": every fact this picture shows, each a category with one of its values. Give "thought": what you take the drawing to be and what that means about their world, taken literally (e.g. "Falling dots, so their sky sheds gravel." or "Their sun has legs, which explains the nights.").`,
-      },
-    ],
+${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.remark}". Update it if more has been drawn.\n` : ""}
+Give "readings": every fact this picture shows, each a category with one of its values. Give "remark", a line said out loud about the natives' world, not about the board: take the drawing as one of the possible facts above and say what that means for life there, literally and fondly (e.g. "Pebbles fall from their sky, so the natives wear hats." or "Three suns, so the natives never get a lie in." or "No animals at all, the natives must do their own mooing."). Never name things that are not among the possible facts, no doors, houses or faces. If nothing readable is there yet, say so about the natives instead (e.g. "The natives are still scribbling." or "Blank so far, the natives are thinking."). Under 12 words.`,
     {
       type: "object",
       properties: {
@@ -106,9 +104,9 @@ Give "readings": every fact this picture shows, each a category with one of its 
             additionalProperties: false,
           },
         },
-        thought: { type: "string" },
+        remark: { type: "string" },
       },
-      required: ["seen", "readings", "thought"],
+      required: ["seen", "readings", "remark"],
       additionalProperties: false,
     },
     "low", // this runs every couple of seconds while the board is up; speed beats care
@@ -129,7 +127,7 @@ Give "readings": every fact this picture shows, each a category with one of its 
 export async function openers({ n }) {
   const out = await call(
     VOICE,
-    `Give ${n} different things you mutter as a stranger raises a whiteboard, before you can make it out. Each under 5 words.`,
+    `Give ${n} different things you say as the natives raise a whiteboard, before you can make it out. You know it is a whiteboard with a drawing on it, so never guess what the board or the drawing is (no doors, flags, walls or windows). Just settling in to look. Each under 5 words, warm with a drop of cheek (e.g. "Oh, the natives have art." or "Let me look." or "Hold it still, natives." or "Right, what have we here.").`,
     { type: "object", properties: { lines: { type: "array", items: { type: "string" } } }, required: ["lines"], additionalProperties: false },
     "low",
   );

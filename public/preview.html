@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>World preview</title>
+<style>
+  html, body { height: 100%; margin: 0; font: 14px/1.4 -apple-system, system-ui, sans-serif; background: #ddd; }
+  #stage { position: fixed; inset: 0; }
+  .bubble { display: none; }
+  #facts { position: fixed; top: 8px; left: 8px; padding: 6px 10px; background: rgba(255,255,255,.85); border-radius: 8px; }
+</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="facts"></div>
+<pre id="log" style="position:fixed;bottom:8px;left:8px;margin:0;padding:6px 10px;background:rgba(255,255,255,.85);border-radius:8px"></pre>
+<script type="module">
+  // Dev page: a world from the query string, e.g. preview.html?suns=two suns&wind=a gale&animals=cows&terrain=mountains&weather=rain
+  // Add who=alien (board) or who=listener (no board) for the ambassador's stage, imagined for the guesser's wide view,
+  // earth for Earth's own colours, seed=N to pin the layout, and pose=idle|drawing|raised|looking.
+  // Errors and stats go on the page too, so a headless --dump-dom run can read them.
+  const note = (m) => { console.log(m); document.getElementById("log").textContent += m + "\n"; };
+  addEventListener("error", (e) => note(`error: ${e.message} (${e.filename}:${e.lineno})`));
+  addEventListener("unhandledrejection", (e) => note(`error: ${e.reason?.message || e.reason}`));
+  import { Scene, WorldView, EARTH_COLOURS } from "./scene.js";
+  const q = new URLSearchParams(location.search), v = {};
+  for (const k of ["suns", "wind", "animals", "terrain", "weather"]) if (q.get(k)) v[k] = q.get(k);
+  const who = q.get("who") || "alien", stage = document.getElementById("stage");
+  let view;
+  if (who === "imagined") view = new WorldView(stage, { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
+  else if (who === "earth") view = new WorldView(stage, { palette: EARTH_COLOURS });
+  else {
+    const board = document.createElement("canvas");
+    board.width = board.height = 640;
+    const g = board.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 640, 640); g.fillStyle = "#111"; g.fillRect(200, 200, 240, 240);
+    view = new Scene(stage, who === "alien" ? board : null, +q.get("hue") || Math.random());
+    if (q.get("pose")) view.pose = q.get("pose");
+  }
+  if (q.get("seed")) view.seed = +q.get("seed");
+  view.showWorld(v);
+  // Headless Chrome only renders a few frames, so run the animation on for a while first: poses settle, things move.
+  for (let i = 0; i < 400; i++) { view.t += 0.016; for (const m of view.movers) m(view.t); view.tick(view.t); }
+  view.renderer.render(view.scene, view.camera);
+  note(`draw calls: ${view.renderer.info.render.calls}, triangles: ${view.renderer.info.render.triangles}`);
+  window.view = view;
+  document.getElementById("facts").textContent = `${who}: ${Object.entries(v).map(([k, x]) => `${k}=${x}`).join(", ") || "no facts"}`;
+</script>
+</body>
+</html>

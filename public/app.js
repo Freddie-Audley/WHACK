@@ -150,10 +150,16 @@ function selectEditorTool(tool) {
 function buildWorldPicker() {
   const categories = $("world-categories");
   for (const category of CATEGORIES) {
-    const group = document.createElement("fieldset");
-    const legend = document.createElement("legend");
-    legend.textContent = category.label;
-    group.append(legend);
+    const group = document.createElement("div");
+    group.className = "category";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", category.label);
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = category.label;
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    group.append(name, chips);
 
     for (const [labelText, value] of category.choices) {
       const label = document.createElement("label");
@@ -193,8 +199,9 @@ function buildWorldPicker() {
           if (other !== checkbox) other.checked = false;
         }
       });
+      label.className = "chip";
       label.append(checkbox, document.createTextNode(labelText));
-      group.append(label);
+      chips.append(label);
     }
 
     categories.append(group);
@@ -305,6 +312,7 @@ async function readBoard() {
       else if (grid.join() !== read && now - since >= STILL_MS) {
         renderBoard(seenBoard, grid);
         $("processed").src = seenBoard.toDataURL(); // exactly what the model is given
+        document.body.classList.add("read");
         log(`board: ${grid.join("/")}`);
         const out = await interpret({ grid, categories: CATEGORIES, believed: guesses, previous: reading });
         read = out.readings.length ? grid.join() : null; // a board read as nothing is looked at again, in case the model missed it
@@ -319,7 +327,7 @@ async function readBoard() {
     } catch (e) { log(`error: ${e.message}`); }
     await waitFor(down, 200);
   }
-  document.body.classList.remove("spotted");
+  document.body.classList.remove("spotted", "read");
   scene.pose = "idle";
   pending = null;
   if (reading) {
@@ -358,7 +366,7 @@ async function shrinkWindow() {
   if (!t) return;
   try {
     const win = t.window.getCurrentWindow();
-    await win.setSize(new t.dpi.LogicalSize(520, 460));
+    await win.setSize(new t.dpi.LogicalSize(520, 505));
     await win.center();
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
@@ -389,20 +397,20 @@ async function wipe() {
 }
 
 // Contact from Earth: Earth behind, the board held up in front, and people draw on it themselves.
-async function earth() {
+async function earth(grow = true) {
   role = "earth";
   t0 = performance.now();
-  await growWindow();
+  if (grow) await growWindow();
   $("start").classList.add("hide");
   document.activeElement?.blur(); // keys belong to the game now, not the menu button
   document.body.classList.add("earth");
   new WorldView($("stage"), { palette: EARTH_COLOURS }).showWorld(EARTH);
 }
 
-async function start(r) {
+async function start(r, grow = true) {
   role = r;
   t0 = performance.now();
-  await growWindow();
+  if (grow) await growWindow();
   $("start").classList.add("hide");
   document.activeElement?.blur(); // keys belong to the game now, not the menu button
   document.body.classList.add(describer() ? "describe" : "guess");
@@ -458,12 +466,15 @@ addEventListener("keydown", (e) => {
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (key) document.body.classList.add("key"); // without one only Contact from Earth works
   buildWorldPicker();
-  if (again === "earth") earth();
-  else if (again === "a" || again === "b") { if (key) start(again); else shrinkWindow(); }
+  if (again === "earth") earth(false); // a Reset keeps whatever size the window had
+  else if (again === "a" || again === "b") { if (key) start(again, false); else shrinkWindow(); }
   $("startA").onclick = () => { clearCustomWorldQuery(); start("a"); };
   $("startB").onclick = () => { clearCustomWorldQuery(); start("b"); };
   $("startE").onclick = () => { clearCustomWorldQuery(); earth(); };
-  $("make-world").onclick = () => {
+  // Make your own new world: the picker takes the choices' place; Start begins as the alien in the world picked.
+  $("make-world").onclick = () => document.body.classList.add("building");
+  $("world-back").onclick = () => document.body.classList.remove("building");
+  $("world-start").onclick = () => {
     Object.assign(world.values, customWorldValues);
     q.set("world", "custom");
     for (const category of CATEGORIES) {
@@ -474,8 +485,9 @@ addEventListener("keydown", (e) => {
     history.replaceState(null, "", location.pathname + `?${q}`);
     start("a");
   };
-  $("menu").onclick = () => menu();
-  $("reset").onclick = () => reset();
+  $("key-menu").onclick = () => { if (t0) menu(); };
+  $("key-reset").onclick = () => { if (t0) reset(); };
+  $("key-quit").onclick = () => window.__TAURI__?.core.invoke("quit");
   $("pen-black").onclick = () => selectPen("#");
   $("pen-white").onclick = () => selectPen(".");
   $("brush-tool").onclick = () => selectEditorTool("pen");

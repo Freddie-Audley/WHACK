@@ -19,6 +19,11 @@ let role = "a";
 const world = generateWorld();
 const randomWorldValues = { ...world.values };
 const customWorldValues = Object.fromEntries(CATEGORIES.map((category) => {
+  if (category.id === "animals") {
+    const savedValues = q.getAll(category.id).filter((value) => category.choices.some(([, choice]) => choice === value));
+    const selected = savedValues.length ? savedValues : [category.choices[0][1]];
+    return [category.id, selected.includes("none") ? ["none"] : selected];
+  }
   const savedValue = q.get(category.id);
   const value = category.choices.some(([, choice]) => choice === savedValue) ? savedValue : category.choices[0][1];
   return [category.id, value];
@@ -149,8 +154,31 @@ function buildWorldPicker() {
       const label = document.createElement("label");
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
-      checkbox.checked = customWorldValues[category.id] === value;
+      checkbox.value = value;
+      checkbox.checked = category.id === "animals"
+        ? customWorldValues.animals.includes(value)
+        : customWorldValues[category.id] === value;
       checkbox.addEventListener("change", () => {
+        if (category.id === "animals") {
+          if (value === "none") {
+            customWorldValues.animals = ["none"];
+            for (const other of group.querySelectorAll('input[type="checkbox"]')) {
+              other.checked = other === checkbox;
+            }
+          } else {
+            if (checkbox.checked) {
+              customWorldValues.animals = customWorldValues.animals.filter((animal) => animal !== "none");
+              if (!customWorldValues.animals.includes(value)) customWorldValues.animals.push(value);
+            } else {
+              customWorldValues.animals = customWorldValues.animals.filter((animal) => animal !== value);
+              if (!customWorldValues.animals.length) customWorldValues.animals = ["none"];
+            }
+            for (const other of group.querySelectorAll('input[type="checkbox"]')) {
+              other.checked = customWorldValues.animals.includes(other.value);
+            }
+          }
+          return;
+        }
         if (!checkbox.checked) {
           checkbox.checked = true;
           return;
@@ -409,7 +437,11 @@ addEventListener("keydown", (e) => {
   $("make-world").onclick = () => {
     Object.assign(world.values, customWorldValues);
     q.set("world", "custom");
-    for (const category of CATEGORIES) q.set(category.id, customWorldValues[category.id]);
+    for (const category of CATEGORIES) {
+      q.delete(category.id);
+      const value = customWorldValues[category.id];
+      for (const choice of Array.isArray(value) ? value : [value]) q.append(category.id, choice);
+    }
     history.replaceState(null, "", location.pathname + `?${q}`);
     start("a");
   };

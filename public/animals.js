@@ -13,6 +13,7 @@ export function buildAnimals(view, v, add) {
   // and one of each herd is on lantern duty.
   view.reseed(5);
   const dark = DARK;
+  const animals = new Set(Array.isArray(v.animals) ? v.animals : [v.animals]);
   const water = v.terrain === "water", gale = v.wind === "a gale", hot = v.suns === "three suns", night = v.suns === "no sun", snow = v.weather === "snow", rain = v.weather === "rain";
   const part = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
   // The extras never draw random numbers (wool colours go round by herd number), so learning the weather after the
@@ -79,7 +80,7 @@ export function buildAnimals(view, v, add) {
       if (at || tries > 30) return at || [x, z];
     }
   };
-  if (v.animals === "cows") {
+  if (animals.has("cows")) {
     const hide = flat(0xf4f1ea), nose = flat(0xe9a6a6);
     const bodyGeo = new THREE.BoxGeometry(1.4, 0.75, 0.7), legGeo = new THREE.BoxGeometry(0.16, 0.52, 0.16).translate(0, -0.24, 0); // legs swing from the hip
     const skullGeo = new THREE.BoxGeometry(0.45, 0.42, 0.42), snoutGeo = new THREE.BoxGeometry(0.15, 0.24, 0.36), hornGeo = new THREE.ConeGeometry(0.05, 0.22, 4), earGeo = new THREE.BoxGeometry(0.1, 0.08, 0.2);
@@ -140,7 +141,7 @@ export function buildAnimals(view, v, add) {
       });
     }
   }
-  if (v.animals === "birds") {
+  if (animals.has("birds")) {
     const bodyGeo = new THREE.ConeGeometry(0.12, 0.6, 5), wingGeo = new THREE.BoxGeometry(0.5, 0.03, 0.25), beakGeo = new THREE.ConeGeometry(0.045, 0.16, 4), beak = flat(0xf0a030);
     for (let k = 0; k < 2; k++) {
       const cx = rand(-5, 5), cy = rand(4, 5.5), cz = rand(-13, -7);
@@ -168,7 +169,7 @@ export function buildAnimals(view, v, add) {
       }
     }
   }
-  if (v.animals === "fish") {
+  if (animals.has("fish")) {
     const scales = flat(0xf08a3c), bodyGeo = new THREE.SphereGeometry(0.3, 7, 5), tailGeo = new THREE.ConeGeometry(0.22, 0.34, 4), finGeo = new THREE.ConeGeometry(0.1, 0.22, 4), mouthGeo = new THREE.SphereGeometry(0.08, 5, 4);
     const hankyGeo = new THREE.BoxGeometry(0.32, 0.06, 0.38), knotGeo = new THREE.SphereGeometry(0.045, 4, 3);
     for (let i = 0; i < 10; i++) {
@@ -214,7 +215,7 @@ export function buildAnimals(view, v, add) {
       });
     }
   }
-  if (v.animals === "snails") {
+  if (animals.has("snails")) {
     const shellMat = flat(0xd9a05b), skin = flat(0xc9cf8a), coil = flat(0xa86a35);
     const footGeo = new THREE.BoxGeometry(1.8, 0.3, 0.55), shellGeo = new THREE.SphereGeometry(0.75, 9, 7), rodGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.6, 5);
     const ringGeos = [0.42, 0.28, 0.14].map((r) => new THREE.TorusGeometry(r, 0.05, 4, 12));
@@ -255,7 +256,7 @@ export function buildAnimals(view, v, add) {
       });
     }
   }
-  if (v.animals === "octopuses") {
+  if (animals.has("octopuses")) {
     const skin = flat(0xb565a7), headGeo = new THREE.SphereGeometry(0.55, 9, 7), jointGeo = new THREE.SphereGeometry(0.08, 5, 4), tubeGeo = new THREE.CylinderGeometry(0.045, 0.045, 1, 5);
     const upperGeo = new THREE.CylinderGeometry(0.08, 0.12, 0.5, 5).translate(0, -0.25, 0), lowerGeo = new THREE.CylinderGeometry(0.04, 0.08, 0.5, 5).translate(0, -0.25, 0);
     const glass = new THREE.MeshStandardMaterial({ color: 0xd8f2ff, transparent: true, opacity: 0.3, depthWrite: false });
@@ -306,7 +307,7 @@ export function buildAnimals(view, v, add) {
       });
     }
   }
-  if (v.animals === "snakes") {
+  if (animals.has("snakes")) {
     const skin = flat(0x5f9e45), band = flat(0xe0c050), ringGeo = new THREE.TorusGeometry(0.3, 0.07, 6, 12);
     const red = night ? new THREE.MeshStandardMaterial({ color: 0xff5a5a, emissive: 0xff3030, emissiveIntensity: 1, flatShading: true }) : flat(0xd8434f); // tongues glow in the dark too
     const N = 16, R = 0.24, segGeo = new THREE.SphereGeometry(R, 7, 5);

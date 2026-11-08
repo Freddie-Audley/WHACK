@@ -18,7 +18,8 @@
 <script type="module">
   // Dev page: a world from the query string, e.g. preview.html?suns=two suns&wind=a gale&animals=cows&food=fruit%20in%20trees&terrain=mountains&weather=rain
   // Add who=alien (board) or who=listener (no board) for the ambassador's stage, imagined for the guesser's wide view,
-  // earth for Earth's own colours, seed=N to pin the layout, and pose=idle|drawing|raised|looking.
+  // earth for Earth's own colours, seed=N to pin the layout, pose=idle|drawing|raised|looking, and yaw=R / pitch=R
+  // (radians) to look about as a drag would.
   // Errors and stats go on the page too, so a headless --dump-dom run can read them.
   const note = (m) => { console.log(m); document.getElementById("log").textContent += m + "\n"; };
   addEventListener("error", (e) => note(`error: ${e.message} (${e.filename}:${e.lineno})`));
@@ -41,6 +42,8 @@
   view.showWorld(v);
   // Headless Chrome only renders a few frames, so run the animation on for a while first: poses settle, things move.
   for (let i = 0; i < 400; i++) { view.t += 0.016; for (const m of view.movers) m(view.t); view.tick(view.t); }
+  view.orbit = { yaw: +q.get("yaw") || 0, pitch: +q.get("pitch") || 0 };
+  view.placeCamera();
   view.renderer.render(view.scene, view.camera);
   note(`draw calls: ${view.renderer.info.render.calls}, triangles: ${view.renderer.info.render.triangles}`);
   window.view = view;

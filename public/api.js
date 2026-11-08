@@ -90,7 +90,7 @@ ${grid.join("\n")}
 Possible facts (category: values):
 ${listCategories(cats)}
 For food, identify both what grows and where: ground mushrooms, field crops, bush berries, or fruit in tree branches.
-${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous ? `A moment ago you read this board as ${list(previous.readings) || "nothing"} and said "${previous.remark}". Update it if more has been drawn.\n` : ""}
+${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous?.readings.length ? `A moment ago you read this board as ${list(previous.readings)} and said "${previous.remark}". Update it if more has been drawn.\n` : ""}
 Give "readings": every fact this picture shows, each a category with one of its values. Give "remark", a line said out loud about the natives' world, not about the board: take the drawing as one of the possible facts above and say what that means for life there, literally and fondly (e.g. "Pebbles fall from their sky, so the natives wear hats." or "Three suns, so the natives never get a lie in." or "No animals at all, the natives must do their own mooing."). Never name things that are not among the possible facts, no doors, houses or faces. If nothing readable is there yet, say so about the natives instead (e.g. "The natives are still scribbling." or "Blank so far, the natives are thinking."). Under 12 words.`,
     {
       type: "object",

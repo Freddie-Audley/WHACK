@@ -13,6 +13,7 @@ const HOLD_MS = 3000;                        // how long the finished board stay
 // Describer: time to read what it says it's about to draw, longer for longer lines.
 const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
+const STILL_MS = 600;                        // guesser: the board must have stopped changing for this long before it is read
 const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thing on?", "Still here.", "The natives are quiet."];
 let role = "a";
 const world = generateWorld();
@@ -234,6 +235,9 @@ function prefetch() {
   });
 }
 
+// How many cells two boards differ in.
+const differ = (a, b) => a.reduce((n, row, y) => n + [...row].filter((c, x) => c !== b[y][x]).length, 0);
+
 // Wait for `pred`, sampling every 200 ms; give up after `ms`.
 async function waitFor(pred, ms) {
   for (let t = 0; t < ms; t += 200) { if (pred()) return true; await sleep(200); }
@@ -290,26 +294,30 @@ async function readBoard() {
   const falls = peer.falls, down = () => peer.falls !== falls; // the board has gone down since it came up
   say(firstWords.length ? firstWords.splice((Math.random() * firstWords.length) | 0, 1)[0] : "…");
   await sleep(500); // let their board settle in frame
-  let reading = null, read = null; // `read`: the board as last sent, so a board that has not changed is not sent again
+  let reading = null, read = null; // `read`: the board as last read into something, so a board that has not changed is not sent again
+  let last = null, since = 0;      // the board as last captured, and when it last changed: a board still being drawn on is not read
   while (!down()) {
     try {
       const grid = peer.capture();
-      if (!grid) log("see: no frame in the crop");
-      else if (grid.join() !== read) {
+      const now = performance.now();
+      if (!grid) { if (last) log("see: no frame in the crop"); last = null; }
+      else if (!last || differ(grid, last) > 1) { last = grid; since = now; } // more drawn (a single cell is webcam flicker): wait for the pen to lift
+      else if (grid.join() !== read && now - since >= STILL_MS) {
         renderBoard(seenBoard, grid);
         $("processed").src = seenBoard.toDataURL(); // exactly what the model is given
         log(`board: ${grid.join("/")}`);
         const out = await interpret({ grid, categories: CATEGORIES, believed: guesses, previous: reading });
-        read = grid.join();
+        read = out.readings.length ? grid.join() : null; // a board read as nothing is looked at again, in case the model missed it
         const key = (o) => o.readings.map((r) => `${r.category}=${r.value}`).sort().join();
         const changed = !reading || key(reading) !== key(out);
         log(`see: ${out.seen} → ${key(out) || "nothing"}${changed ? "" : " (unchanged)"} / "${out.remark}"`);
         reading = pending = out;
         if (changed) showGuesses();
         say(out.remark);
+        await waitFor(down, PAUSE_MS);
       }
     } catch (e) { log(`error: ${e.message}`); }
-    await waitFor(down, PAUSE_MS);
+    await waitFor(down, 200);
   }
   document.body.classList.remove("spotted");
   scene.pose = "idle";

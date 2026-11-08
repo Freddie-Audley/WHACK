@@ -38,8 +38,10 @@ export class WorldView {
     this.camHome = new THREE.Vector3(...camera);
     this.lookHome = new THREE.Vector3(...lookAt);
     this.look = this.lookHome.clone();
+    this.camBase = this.camHome.clone(); // where the camera would be with no looking about
     this.camera.position.copy(this.camHome);
     this.camera.lookAt(this.look);
+    this.listenForLooking();
 
     this.hemi = new THREE.HemisphereLight(0xffffff, 0xd8c8a8, 1.0);
     this.sun = new THREE.DirectionalLight(0xfff4d6, 2.0);
@@ -57,6 +59,37 @@ export class WorldView {
 
     new ResizeObserver(() => this.resize()).observe(container);
     this.animate();
+  }
+
+  // A drag or a two-finger scroll on the view swings the camera a little way round whatever it is looking at.
+  listenForLooking() {
+    this.orbit = { yaw: 0, pitch: 0 };
+    const el = this.renderer.domElement;
+    el.style.touchAction = "none";
+    const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+    const turn = (dx, dy) => {
+      this.orbit.yaw = clamp(this.orbit.yaw - dx * 0.004, -0.45, 0.45);
+      this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.004, -0.3, 0.15);
+    };
+    el.addEventListener("wheel", (e) => { e.preventDefault(); turn(e.deltaX, e.deltaY); }, { passive: false });
+    let last = null;
+    el.addEventListener("pointerdown", (e) => { last = [e.clientX, e.clientY]; el.setPointerCapture(e.pointerId); });
+    el.addEventListener("pointermove", (e) => {
+      if (!last) return;
+      turn(e.clientX - last[0], e.clientY - last[1]);
+      last = [e.clientX, e.clientY];
+    });
+    for (const ev of ["pointerup", "pointercancel"]) el.addEventListener(ev, () => { last = null; });
+  }
+
+  // The camera sits at camBase, swung round the look point by the orbit: yaw about the vertical, pitch about its own right.
+  placeCamera() {
+    const off = this.camBase.clone().sub(this.look);
+    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.orbit.yaw);
+    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), off).normalize();
+    off.applyAxisAngle(right, this.orbit.pitch);
+    this.camera.position.copy(this.look).add(off);
+    this.camera.lookAt(this.look);
   }
 
   resize() {
@@ -108,6 +141,7 @@ export class WorldView {
     this.t += DT;
     for (const m of this.movers) m(this.t);
     this.tick(this.t);
+    this.placeCamera();
     this.renderer.render(this.scene, this.camera);
   }
 }
@@ -525,14 +559,15 @@ export class Scene extends WorldView {
     bg.position.z = lerp(bg.position.z, target.bz);
     bg.rotation.x = lerp(bg.rotation.x, target.tilt);
     this.arms[0].rotation.x = lerp(this.arms[0].rotation.x, target.armX);
-    // Raised: the frame turns magenta and the camera rises to look straight at the board.
+    // Raised: the frame turns magenta and the camera rises to look straight at the board (and any looking
+    // about is undone, so the webcam gets the board square on).
     this.frame.material = P === "raised" ? this.frameMagenta : this.frameDark;
     const bp = bg.getWorldPosition(new THREE.Vector3());
     const camTo = P === "raised" ? new THREE.Vector3(bp.x, bp.y, bp.z + 3.4) : this.camHome;
     const lookTo = P === "raised" ? bp : this.lookHome;
-    this.camera.position.lerp(camTo, 0.06);
+    this.camBase.lerp(camTo, 0.06);
     this.look.lerp(lookTo, 0.06);
-    this.camera.lookAt(this.look);
+    if (P === "raised") { this.orbit.yaw *= 0.9; this.orbit.pitch *= 0.9; }
     // The right arm scribbles while drawing.
     const scribble = P === "drawing" ? Math.sin(t * 22) * 0.18 : 0;
     this.arms[1].rotation.x = lerp(this.arms[1].rotation.x, target.armX + scribble, 0.35);

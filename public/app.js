@@ -425,6 +425,14 @@ addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message ||
 
 // Safari on iPhone ignores the viewport's user-scalable=no and zooms on a pinch anyway; it does honour this.
 addEventListener("gesturestart", (e) => e.preventDefault());
+// And a double tap zooms where touch-action is not honoured; swallowing the second tap stops it (not on buttons,
+// so a quick second press of Clear still counts).
+let lastTap = 0;
+addEventListener("touchend", (e) => {
+  const now = Date.now();
+  if (now - lastTap < 350 && !e.target.closest("button")) e.preventDefault();
+  lastTap = now;
+}, { passive: false });
 
 addEventListener("keydown", (e) => {
   if (e.code === "KeyQ") { e.preventDefault(); window.__TAURI__?.core.invoke("quit"); return; }

@@ -13,8 +13,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <style>
   * { box-sizing: border-box; }
-  /* No pinch or double-tap zoom on phones; nothing here scrolls, so panning is all touch needs to do. */
-  html, body { height: 100%; touch-action: pan-x pan-y; }
+  /* No pinch or double-tap zoom on phones; nothing here scrolls, so panning is all touch needs to do. On every
+     element, not just the root: iPhone Safari zooms on a double tap on the board's frame or the gaps otherwise. */
+  * { touch-action: pan-x pan-y; }
+  html, body { height: 100%; }
   body { margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif; color: #1d1d3a; background: linear-gradient(135deg, var(--bg1, rgba(255,214,232,.25)), var(--bg2, rgba(201,228,255,.25))); overflow: hidden; user-select: none; -webkit-user-select: none; cursor: default; }
   .surface { display: none; position: fixed; top: 40px; bottom: 8px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(40,30,80,.10), 0 0 0 1px rgba(255,255,255,.3); }
   body.describe #stage, body.guess #stage, body.guess #imagined, body.guess #cam { display: block; }

@@ -13,7 +13,7 @@ const HOLD_MS = 3000;                        // how long the finished board stay
 // Describer: time to read what it says it's about to draw, longer for longer lines.
 const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
-const STILL_MS = 600;                        // guesser: the board must have stopped changing for this long before it is read
+const STILL_MS = 400;                       // guesser: the board must have stopped changing for this long before it is read
 const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thing on?", "Still here.", "The natives are quiet."];
 let role = "a";
 const world = generateWorld();
@@ -428,7 +428,7 @@ async function start(r, grow = true) {
   scene.showWorld(world.values);
   if (describer()) { prefetch(); describe(); return; }
   imagined = new WorldView($("imagined"), { camera: [0, 3.5, 12], lookAt: [0, 2.2, -4], fov: 42 });
-  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.008);
+  peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.004);
   openers({ n: pictures.length + 1 }).then((l) => { firstWords = l; }).catch((e) => log(`error: ${e.message}`));
   await peer.start();
   guess();

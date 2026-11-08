@@ -2,6 +2,7 @@ import { CATEGORIES, EARTH, generateWorld } from "./worlds.js";
 import { renderBoard, renderEditorBoard, cleanGrid, emptyGrid, ink, W, H, SIZE } from "./board.js";
 import { WebcamPeer } from "./peer.js";
 import { Scene, WorldView, EARTH_COLOURS } from "./scene.js";
+import { Tilt } from "./tilt.js";
 import { draw, interpret, openers, loadKey } from "./api.js";
 
 // One laptop describes its world (role "a"), the other only guesses (role "b").
@@ -298,7 +299,9 @@ async function earth() {
   $("start").classList.add("hide");
   document.activeElement?.blur(); // keys belong to the game now, not the menu button
   document.body.classList.add("earth");
-  new WorldView($("stage"), { palette: EARTH_COLOURS }).showWorld(EARTH);
+  const view = new WorldView($("stage"), { palette: EARTH_COLOURS });
+  view.showWorld(EARTH);
+  view.tilt = new Tilt(); // on a phone, tilting it turns the background a little
 }
 
 async function start(r) {

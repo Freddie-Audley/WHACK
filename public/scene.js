@@ -108,6 +108,11 @@ export class WorldView {
     this.t += DT;
     for (const m of this.movers) m(this.t);
     this.tick(this.t);
+    if (this.tilt) { // phones: the view turns a little with the phone, like a window (tilt.js)
+      const [x, y, z, w] = this.tilt.offset();
+      this.camera.lookAt(this.look);
+      this.camera.quaternion.multiply((this.tiltTurn ??= new THREE.Quaternion()).set(x, y, z, w));
+    }
     this.renderer.render(this.scene, this.camera);
   }
 }

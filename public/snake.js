@@ -92,7 +92,7 @@ resize();
 function frame(now) {
   if (start.classList.contains("hide")) return; // the game has begun: stop
   const t = now / 1000;
-  ufo.position.set(home.x, home.y + 0.06 * Math.sin(t * 1.4), home.z); // hovering
+  ufo.position.set(home.x, home.y + 0.1 + 0.06 * Math.sin(t * 1.4), home.z); // hovering
   ufo.rotation.set(0, -0.12, 0.025 * Math.sin(t * 0.9));
   saucer.rotation.y = dome.rotation.y = t * 0.5;
   beam.material.opacity = 0.18 + 0.06 * Math.sin(t * 5); // humming

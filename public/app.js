@@ -17,6 +17,14 @@ const PICTURES = 4;                          // the describer gets this many boa
 const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thing on?", "Still here.", "The natives are quiet."];
 let role = "a";
 const world = generateWorld();
+const randomWorldValues = { ...world.values };
+const customWorldValues = Object.fromEntries(CATEGORIES.map((category) => {
+  const savedValue = q.get(category.id);
+  const value = category.choices.some(([, choice]) => choice === savedValue) ? savedValue : category.choices[0][1];
+  return [category.id, value];
+}));
+const customWorldReplay = q.get("world") === "custom";
+if (customWorldReplay) Object.assign(world.values, customWorldValues);
 world.order = world.order.slice(0, N);
 // The facts shared out over the boards as evenly as possible.
 const pictures = Array.from({ length: Math.min(PICTURES, N) }, () => []);
@@ -123,6 +131,37 @@ function selectEditorTool(tool) {
   editorTool = tool;
   $("brush-tool").setAttribute("aria-pressed", String(tool === "pen"));
   $("fill-tool").setAttribute("aria-pressed", String(tool === "fill"));
+}
+
+function buildWorldPicker() {
+  const categories = $("world-categories");
+  for (const category of CATEGORIES) {
+    const group = document.createElement("fieldset");
+    const legend = document.createElement("legend");
+    legend.textContent = category.label;
+    group.append(legend);
+
+    for (const [labelText, value] of category.choices) {
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = customWorldValues[category.id] === value;
+      checkbox.addEventListener("change", () => {
+        if (!checkbox.checked) {
+          checkbox.checked = true;
+          return;
+        }
+        customWorldValues[category.id] = value;
+        for (const other of group.querySelectorAll('input[type="checkbox"]')) {
+          if (other !== checkbox) other.checked = false;
+        }
+      });
+      label.append(checkbox, document.createTextNode(labelText));
+      group.append(label);
+    }
+
+    categories.append(group);
+  }
 }
 
 let sent = 0;            // describer: boards shown so far
@@ -271,9 +310,15 @@ async function shrinkWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
-// Back to the menu: begin afresh (the reload shrinks the window). Reset reloads straight back into the same role.
+// Back to the menu: begin afresh (the reload shrinks the window). Reset replays the last menu choice.
 function menu() { q.delete("role"); location.href = location.pathname + (q.size ? `?${q}` : ""); }
 function reset() { q.set("role", role); location.search = `?${q}`; }
+function clearCustomWorldQuery() {
+  Object.assign(world.values, randomWorldValues);
+  q.delete("world");
+  for (const category of CATEGORIES) q.delete(category.id);
+  history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : ""));
+}
 
 // Wipe (or Enter): the board goes down (so the guesser settles on what it saw), is wiped, and comes back up clean.
 let wiping = false;
@@ -351,11 +396,19 @@ addEventListener("keydown", (e) => {
   const key = await loadKey();
   log(`booted ${location.href} key:${key ? "yes" : "no"}`);
   if (key) document.body.classList.add("key"); // without one only Contact from Earth works
+  buildWorldPicker();
   if (again === "earth") earth();
   else if (again === "a" || again === "b") { if (key) start(again); else shrinkWindow(); }
-  $("startA").onclick = () => start("a");
-  $("startB").onclick = () => start("b");
-  $("startE").onclick = () => earth();
+  $("startA").onclick = () => { clearCustomWorldQuery(); start("a"); };
+  $("startB").onclick = () => { clearCustomWorldQuery(); start("b"); };
+  $("startE").onclick = () => { clearCustomWorldQuery(); earth(); };
+  $("make-world").onclick = () => {
+    Object.assign(world.values, customWorldValues);
+    q.set("world", "custom");
+    for (const category of CATEGORIES) q.set(category.id, customWorldValues[category.id]);
+    history.replaceState(null, "", location.pathname + `?${q}`);
+    start("a");
+  };
   $("menu").onclick = () => menu();
   $("reset").onclick = () => reset();
   $("pen-black").onclick = () => selectPen("#");

@@ -70,6 +70,15 @@ API key and an internet connection. The listener needs a webcam.
 The game opens with buttons for **Be the alien**, **Be the listener**, and
 **Be Earth**.
 
+### Make your own new world
+
+The main menu shows the world builder. Choose one option in each category;
+the first option in each category is selected by default. Choose **Make your
+own new world** to start as the alien with those selections. **Be the alien**
+and **Be the listener** continue to use randomly generated worlds.
+Press **R** or choose **Reset** to replay the last option; a custom world is
+replayed with the same selections.
+
 ### Open Be Earth on a phone
 
 To try the drawing mode on a phone connected to the same local network:

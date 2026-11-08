@@ -153,7 +153,10 @@ const PEER = new THREE.Euler(0.12, 0.15, -0.2);
 // Without a board canvas the ambassador holds a telescope instead (the guesser).
 export class Scene extends WorldView {
   constructor(container, boardCanvas, hue) {
-    super(container, { camera: [0, 2.7, 8.2], lookAt: [0, 2.3, 0] }); // framed high and a step back: room over the head for the speech bubble
+    // Framed high and a step back: room over the head for the speech bubble. The describer's stage is the wide full
+    // window, so its camera sits higher still, pushing the figure down for more bubble room.
+    const up = boardCanvas ? 0.2 : 0;
+    super(container, { camera: [0, 2.7 + up, 8.2], lookAt: [0, 2.3 + up, 0] });
     this.pose = "idle";
     this.buildAmbassador(boardCanvas, hue);
   }
@@ -223,7 +226,7 @@ export class Scene extends WorldView {
     // brow must be, and `sink` how far below the top a wide hat brim settles (a lot on a round head).
     const hr = rand(0.45, 0.65);
     const H = pick([
-      { geo: new THREE.IcosahedronGeometry(hr, 0), chin: hr * 0.85, top: hr * 0.85, lip: hr * 0.85, bend: 0.36, band: 0.8, sink: 0.08 },
+      { geo: new THREE.IcosahedronGeometry(hr, 0), chin: hr * 0.85, top: hr * 0.85, lip: hr * 0.85, bend: 0.36, band: 0.8, sink: 0.015 }, // the top is a ridge as wide as any crown, so a brim sits on it
       { geo: new THREE.SphereGeometry(hr, 8, 6), chin: hr, top: hr, lip: hr * 0.89, bend: 0.4, band: 0.85, sink: 0.1 },
       { geo: new THREE.BoxGeometry(hr * 1.7, hr * 1.5, hr * 1.7), chin: hr * 0.75, top: hr * 0.75, lip: hr * 0.85, bend: 0, band: 0.95, sink: 0.01 },
       { geo: new THREE.CylinderGeometry(hr * 0.7, hr, hr * 1.8, 6), chin: hr * 0.9, top: hr * 0.9, lip: hr * 0.92, bend: 0.52, band: 0.7, sink: 0.01 },
@@ -232,10 +235,12 @@ export class Scene extends WorldView {
     this.head.position.y = T.top + 0.15 + H.chin; // the chin a little way up the neck
     this.body.add(this.head);
     this.eyes = [];
-    const ne = pick([1, 2, 2, 2, 3]), es = rand(0.11, 0.2);
+    // Three eyes are smaller and closer set, the middle one up a little and the other two down a little, so the outer
+    // pair stay on the face of a small head and the middle one stays below the head torch's band.
+    const ne = pick([1, 2, 2, 2, 3]), es = Math.min(rand(0.11, 0.2), ne === 3 ? hr * 0.28 : 1);
     for (let i = 0; i < ne; i++) {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(es, 7, 5), white);
-      eye.position.set(ne === 1 ? 0 : (i - (ne - 1) / 2) * es * 2.3, 0.05 + (ne === 3 && i === 1 ? es : 0), hr * 0.85);
+      eye.position.set((i - (ne - 1) / 2) * es * (ne === 3 ? 1.85 : 2.3), 0.05 + (ne === 3 ? (i === 1 ? 0.4 : -0.4) * es : 0), hr * 0.85);
       const pupil = new THREE.Mesh(new THREE.SphereGeometry(es * 0.45, 5, 4), dark);
       pupil.position.z = es * 0.75;
       eye.add(pupil);
@@ -268,9 +273,10 @@ export class Scene extends WorldView {
       this.head.add(a);
       this.antennae.push(a);
     }
-    this.headTop = hr * 1.05; // the speech bubble sits on the head itself; antennae poke up behind it
+    this.headTop = H.top + 0.03; // the speech bubble sits on the head itself; antennae poke up behind it
 
     // One accessory each, for charm: a bow tie, a bowler, a monocle or a flower.
+    const ht = H.top - H.sink; // where a brim sits
     const trinket = pick(["bowtie", "hat", "monocle", "flower"]);
     if (trinket === "bowtie") { // at the front of the neck, just under the chin
       const bow = new THREE.Group();
@@ -287,19 +293,19 @@ export class Scene extends WorldView {
     if (trinket === "hat") { // a bowler, its brim sunk a touch into the crown of the head so it sits on every shape
       const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 10), dark);
       const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.22, 10), dark);
-      brim.position.y = H.top - 0.01;
-      crown.position.y = H.top + 0.1;
+      brim.position.y = ht + 0.02; // not as deep as the weather hats: the crown is narrow, and a round head would show above the brim
+      crown.position.y = ht + 0.13;
       this.topper = new THREE.Group();
       this.topper.add(brim, crown);
       this.head.add(this.topper);
-      this.headTop = H.top + 0.24;
+      this.headTop = ht + 0.27;
     }
     if (trinket === "monocle") { // around the left eye, on a string
       const e = this.eyes[0].position;
       const ring = new THREE.Mesh(new THREE.TorusGeometry(es * 1.15, 0.02, 5, 12), dark);
       ring.position.set(e.x, e.y, e.z + es * 0.45);
       const string = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 4), dark);
-      string.position.set(e.x - es * 1.1, e.y - es * 1.15 - 0.13, ring.position.z);
+      string.position.set(e.x - es * 0.81 + 0.04, e.y - es * 0.81 - 0.14, ring.position.z); // its top end on the ring's lower left
       string.rotation.z = 0.25;
       this.monocle = new THREE.Group();
       this.monocle.add(ring, string);
@@ -353,7 +359,6 @@ export class Scene extends WorldView {
     this.hats = new THREE.Group();
     this.head.add(this.hats);
     const hat = (...parts) => { const g = new THREE.Group(); g.add(...parts); g.visible = false; this.hats.add(g); return g; };
-    const ht = H.top - H.sink; // where a brim sits
     // Snow: a bobble hat, and a scarf whose tail is laid back down the torso from the nape.
     G.bobble = hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.3, 0.32, 8), wool), 0, ht + 0.15, 0),
       at(new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.1, 8), white), 0, ht, 0), at(new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), white), 0, ht + 0.35, 0));

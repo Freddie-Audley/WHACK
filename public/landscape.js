@@ -51,6 +51,8 @@ export function buildLandscape(view, v, P, W, sky, add) {
     const k = Math.min(1, Math.max(0, (Math.hypot(x, z) - 2) / 4));
     return amp * k * (Math.sin(x * 0.45 + 1.3) * Math.cos(z * 0.38) + 0.6 * Math.sin(x * 0.9 - z * 0.7));
   };
+  // Which way is up on the ground there, from its slope, so anything with a footprint can sit flush on a hillside.
+  const slopeUp = (x, z, d = 0.3) => V(view.groundY(x - d, z) - view.groundY(x + d, z), 2 * d, view.groundY(x, z - d) - view.groundY(x, z + d)).normalize();
   const groundColour = tint(!known("terrain") ? 0xffffff : water ? 0x6fb7d9 : P.ground);
   const geo = new THREE.PlaneGeometry(80, 80, 64, 64);
   const gp = geo.attributes.position;
@@ -114,9 +116,10 @@ export function buildLandscape(view, v, P, W, sky, add) {
     for (let i = 0; i < 12; i++) { x = rand(-14, 14); y = rand(9, 13); if (suns.every(([sx, sy, sr]) => Math.hypot(x - sx, y - sy) > sr + r + 0.5)) break; }
     add(disc(r, 0xf4f1e8, 0.9), false).position.set(x, y, -29);
   }
+  // Stars sit behind the far peaks and hills (a star in front of a mountain is a glint on its face), a little bigger for the distance.
   if (v.suns === "no sun") add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position",
-    new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),
-    new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, fog: false })), false);
+    new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-45, -38)]).flat(), 3)),
+    new THREE.PointsMaterial({ color: 0xffffff, size: 0.25, fog: false })), false);
 
   // Trees in clumps, all of one family (conifers, round-headed or flat-topped), once the terrain is known.
   // Within the family every tree differs in height, canopy and shade of leaf. They bend in the wind.
@@ -162,7 +165,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
   view.reseed(6);
   if (W) for (let i = 0; i < W.streaks; i++) {
     const s = add(new THREE.Mesh(new THREE.BoxGeometry(rand(2, 4), 0.03, 0.03), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 })), false);
-    const y = rand(0.5, 7), z = rand(-12, 1);
+    const y = rand(0.8, 7), z = rand(-12, 1); // clear of the hills, which rise to 0.56
     let x = rand(-20, 20);
     view.movers.push((t) => { x += W.speed * (1 + gust(t)) * DT; if (x > 20) x = -20; s.position.set(x, y + Math.sin(t * 3 + i) * 0.1, z); });
   }
@@ -199,7 +202,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
     for (let i = 0; i < 40; i++) {
       const light = add(new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })), false);
       light.scale.setScalar(rand(0.25, 0.45));
-      const x = rand(-12, 12), y = rand(0.4, 3.5), z = rand(-14, 2), p = rand(0, 20), f = rand(0.3, 0.7);
+      const x = rand(-12, 12), z = rand(-14, 2), y = view.groundY(x, z) + rand(1, 3.5), p = rand(0, 20), f = rand(0.3, 0.7); // bobbing half a unit, so never into the ground
       view.movers.push((t) => {
         light.position.set(x + 1.5 * Math.sin(t * f * 0.5 + p), y + 0.5 * Math.sin(t * f + p * 2), z + 1.2 * Math.cos(t * f * 0.4 + p));
         light.material.opacity = 0.25 + 0.75 * Math.max(0, Math.sin(t * f * 2 + p));
@@ -255,8 +258,9 @@ export function buildLandscape(view, v, P, W, sky, add) {
     });
     scatter(new THREE.DodecahedronGeometry(1, 0), 36, (o, c, i) => {
       const near = i < 3, r = near ? rand(0.45, 0.85) : rand(0.15, 0.5), [x, z] = spot(near, r * 1.3);
-      if (near) nearRocks.push([x, z, r]);
       o.position.set(x, r * 0.5, z); o.scale.set(r * rand(0.9, 1.4), r * 0.8, r * rand(0.9, 1.4)); o.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
+      // Tumbled every which way, so how tall a rock stands is anyone's guess: the snow caps need to know, near enough (the squashed sphere round it).
+      if (near) nearRocks.push([x, z, r, r * 0.5 + 0.9 * UP.clone().applyQuaternion(o.quaternion.clone().invert()).multiply(o.scale).length()]);
       c.copy(rock).offsetHSL(0, 0, rand(-0.06, 0.06));
     });
   }
@@ -293,7 +297,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
           const top = new THREE.Mesh(new THREE.SphereGeometry(0.2 * size, 7, 5), rand(0, 1) < 0.25 ? paleCap : cap);
           top.scale.y = 0.48; top.position.y = 0.3 * size;
           mushroom.add(foot, top);
-          mushroom.position.set(Math.cos(a) * d, view.groundY(x, z), Math.sin(a) * d);
+          mushroom.position.set(Math.cos(a) * d, view.groundY(x + Math.cos(a) * d, z + Math.sin(a) * d), Math.sin(a) * d); // each on its own bit of hillside
           group.add(mushroom);
         }
         group.position.set(x, 0, z);
@@ -306,11 +310,11 @@ export function buildLandscape(view, v, P, W, sky, add) {
         if (!at) continue;
         const [x, z] = at, group = new THREE.Group(), grain = flat(tint(0xe6bd61));
         for (let row = -2; row <= 2; row++) for (let i = 0; i < 7; i++) {
-          const px = row * 0.36, pz = (i - 3) * 0.38, h = rand(0.55, 0.95);
+          const px = row * 0.36, pz = (i - 3) * 0.38, h = rand(0.55, 0.95), gy = view.groundY(x + px, z + pz) - view.groundY(x, z); // the field follows the hillside
           const stalkMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, h, 4), stem);
-          stalkMesh.position.set(px, h / 2, pz);
+          stalkMesh.position.set(px, gy + h / 2, pz);
           const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 5), grain);
-          head.position.set(px, h + 0.08, pz);
+          head.position.set(px, gy + h + 0.08, pz);
           group.add(stalkMesh, head);
         }
         group.position.set(x, view.groundY(x, z), z);
@@ -332,7 +336,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
         }
         const berryCount = 2 + (rand(0, 2) | 0);
         for (let i = 0; i < berryCount; i++) {
-          const bx = rand(-0.4, 0.4), by = rand(0.16, 0.58), bz = rand(0.35, 0.53);
+          const bx = rand(-0.4, 0.4), by = rand(0.25, 0.55), bz = rand(0.3, 0.45); // on the front blobs' faces, not rolled off at the foot
           const b = new THREE.Mesh(fruit, berry);
           b.position.set(bx, by, bz);
           group.add(b);
@@ -358,7 +362,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
         for (let i = 0; i < 5; i++) {
           const a = i * Math.PI * 2 / 5, apple = new THREE.Mesh(sphere, fruit);
           apple.scale.setScalar(0.14);
-          apple.position.set(Math.cos(a) * 0.62, 1.65 + (i % 2) * 0.35, Math.sin(a) * 0.55);
+          apple.position.set(Math.cos(a) * 0.74, 1.65 + (i % 2) * 0.35, Math.sin(a) * 0.66); // half out of the canopy's faces, so they read as fruit, not blotches
           group.add(apple);
         }
         group.position.set(x, view.groundY(x, z), z);
@@ -409,7 +413,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
     const at = claim(view, rand(-6, 6), rand(-11, -5), 0.8, clear);
     if (at) {
       const [x, z] = at, man = new THREE.Group(), BALL = new THREE.SphereGeometry(1, 8, 6);
-      for (const [r, y] of [[0.5, 0.45], [0.36, 1.15], [0.26, 1.66]]) { const b = new THREE.Mesh(BALL, WHITE); b.scale.setScalar(r); b.position.y = y; man.add(b); }
+      for (const [r, y] of [[0.5, 0.4], [0.36, 1.15], [0.26, 1.66]]) { const b = new THREE.Mesh(BALL, WHITE); b.scale.setScalar(r); b.position.y = y; man.add(b); } // the base dug in a little, for hillsides
       const nose = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.3, 5), flat(0xf07c2a));
       nose.position.set(0, 1.64, 0.36); nose.rotation.x = Math.PI / 2; man.add(nose);
       for (const sx of [-0.09, 0.09]) { const e = new THREE.Mesh(BALL, DARK); e.scale.setScalar(0.035); e.position.set(sx, 1.74, 0.22); man.add(e); }
@@ -426,7 +430,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
       man.position.set(x, view.groundY(x, z), z); man.rotation.y = rand(-0.5, 0.5);
       add(man);
     }
-    for (const [x, z, r] of nearRocks) { const c = new THREE.Mesh(BLOB, SNOWY); c.scale.set(r * 0.9, r * 0.3, r * 0.9); c.position.set(x, view.groundY(x, z) + r * 1.1, z); add(c); }
+    for (const [x, z, r, top] of nearRocks) { const c = new THREE.Mesh(BLOB, SNOWY); c.scale.set(r * 0.9, r * 0.2, r * 0.9); c.position.set(x, view.groundY(x, z) + top - r * 0.04, z); add(c); } // a flat drift over the top, not a second boulder
     // Only the nearer canopies, where it shows; conifers shed theirs.
     for (const { g, h, s, kind, z } of trees) if (kind && z > -10) {
       const c = new THREE.Mesh(BLOB, SNOWY);
@@ -444,11 +448,11 @@ export function buildLandscape(view, v, P, W, sky, add) {
     for (let i = 0; i < 8; i++) {
       const at = claim(view, rand(-10, 10), -8 + rand(-5, 5), 0.9, clear);
       if (!at) continue;
-      const [x, z] = at, y = view.groundY(x, z) + 0.03;
+      const [x, z] = at, y = view.groundY(x, z) + 0.03, up = slopeUp(x, z); // lying along the slope, or one side sinks in and the other floats
       const p = add(new THREE.Mesh(PUDDLE, pool), false);
-      p.position.set(x, y, z); p.rotation.set(-Math.PI / 2, 0, rand(0, 6)); p.scale.set(rand(0.5, 1.1) * hilly, rand(0.35, 0.7) * hilly, 1);
+      p.position.set(x, y, z); p.quaternion.setFromUnitVectors(V(0, 0, 1), up); p.rotateZ(rand(0, 6)); p.scale.set(rand(0.5, 1.1) * hilly, rand(0.35, 0.7) * hilly, 1);
       const r = add(new THREE.Mesh(RING, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })), false);
-      r.rotation.x = -Math.PI / 2; r.position.set(x, y + 0.01, z);
+      r.quaternion.setFromUnitVectors(V(0, 0, 1), up); r.position.set(x, y + 0.01, z);
       const ph = rand(0, 4);
       view.movers.push((t) => { const k = (t * 0.5 + ph) % 2; r.scale.setScalar(0.05 + k * 0.2 * hilly); r.material.opacity = 0.6 * (1 - k / 2); });
     }
@@ -461,10 +465,10 @@ export function buildLandscape(view, v, P, W, sky, add) {
       if (pair) {
         const [a, b] = pair, y0 = Math.min(a.h, b.h) * 0.7;
         const end = (tr) => V(tr.x - Math.sin(tr.g.rotation.z) * y0, tr.g.position.y + Math.cos(tr.g.rotation.z) * y0, tr.z);
-        const line = add(bar(end(a), end(b), 0.02, DARK), false);
+        const line = add(bar(end(a), end(b), 0.02, DARK), false), along = Math.atan2(a.z - b.z, b.x - a.x); // the shirts hang in the line's plane, swinging about it
         const shirts = [0.35, 0.65].map((f, i) => {
           const pv = add(new THREE.Group()), sh = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.03), i ? WHITE : flat(0x7fb3d5));
-          sh.position.y = -0.22; pv.add(sh);
+          sh.position.y = -0.22; pv.add(sh); pv.rotation.set(0, along, 0, "YXZ");
           return [pv, f];
         });
         view.movers.push((t) => {
@@ -486,10 +490,12 @@ export function buildLandscape(view, v, P, W, sky, add) {
       const top = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.4, 8), canvas); top.position.set(0.8, 1.85, 0); g.add(top);
       // The deckchair: seat and back of stretched canvas on two crossed pairs of legs, leaning back as a deckchair should.
       const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.7), canvas); seat.position.set(-0.3, 0.38, 0.1); seat.rotation.x = -0.3;
-      const back = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.7), canvas); back.position.set(-0.3, 0.68, -0.45); back.rotation.x = -1.15;
+      // The back rises from the seat's rear edge (at y 0.28, z -0.23) and leans away from the sitter.
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.7), canvas); back.position.set(-0.3, 0.6, -0.4); back.rotation.x = 1.15;
       g.add(seat, back);
-      for (const sx of [-0.6, 0]) g.add(bar(V(sx, 0, 0.5), V(sx, 0.55, -0.3), 0.02, frame), bar(V(sx, 0, -0.5), V(sx, 0.45, 0.4), 0.02, frame));
-      g.position.set(x, view.groundY(x, z), z); g.rotation.y = rand(-0.4, 0.4);
+      // Each X: the front leg runs up under the seat to the foot of the back, the rear one up to under the seat's front edge.
+      for (const sx of [-0.6, 0]) g.add(bar(V(sx, 0, 0.5), V(sx, 0.4, -0.3), 0.02, frame), bar(V(sx, 0, -0.5), V(sx, 0.47, 0.42), 0.02, frame));
+      g.position.set(x, view.groundY(x, z), z); g.quaternion.setFromUnitVectors(UP, slopeUp(x, z)); g.rotateY(rand(-0.4, 0.4)); // sat on the slope, parasol and all
       add(g);
     }
     // Cacti: a column with an arm or two, all one instanced mesh. Half scorched like the bushes, half still defiantly green.
@@ -534,8 +540,10 @@ export function buildLandscape(view, v, P, W, sky, add) {
       sail.scale.set(0.8, 1.2, 1); kite.add(sail);
       const tail = [];
       for (let i = 1; i <= 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), WHITE); b.position.set(0.2 * i, -0.4 - 0.25 * i, 0); kite.add(b); tail.push(b); }
-      kite.add(bar(V(0, -0.38, 0), V(0.75, -1.25, 0), 0.006, DARK));
-      kite.position.set(s * 0.7, kind === 0 ? h + s * 1.3 : kind === 1 ? h + s * 1.1 : h + 0.45, s * 0.6); kite.rotation.set(0.5, 0.3, -0.5);
+      kite.add(bar(V(0, -0.38, 0), V(0.75, -1.34, 0), 0.006, DARK)); // through the bows
+      // Wedged into the camera side of the canopy: the upper cone, the big blob, or lying on the flat top.
+      const [kx, ky, kz] = kind === 0 ? [0.15, h + s * 0.9, 0.7] : kind === 1 ? [0.2, h + s * 0.9, 0.8] : [0.2, h + 0.35, 0.75];
+      kite.position.set(s * kx, ky, s * kz); kite.rotation.set(0.5, 0.3, -0.5);
       g.add(kite);
       view.movers.push((t) => { kite.rotation.z = -0.5 + Math.sin(t * 6) * 0.08; for (const [i, b] of tail.entries()) b.position.y = -0.4 - 0.25 * (i + 1) + Math.sin(t * 8 + i) * 0.05; });
     }
@@ -548,9 +556,10 @@ export function buildLandscape(view, v, P, W, sky, add) {
     const at = claim(view, rand(-4, 4), rand(-8, -4.5), 1.0, clear);
     if (at) {
       const [x, z] = at, y = view.groundY(x, z), g = new THREE.Group(), log = flat(0x4a3526);
-      for (let i = 0; i < 3; i++) { const a = i * 1.05, c = Math.cos(a) * 0.35, s = Math.sin(a) * 0.35; g.add(bar(V(c, 0.06, s), V(-c, 0.06, -s), 0.06, log)); }
+      const dy = (dx, dz) => view.groundY(x + dx, z + dz) - y; // logs and stones lie on the slope; the flames stay upright
+      for (let i = 0; i < 3; i++) { const a = i * 1.05, c = Math.cos(a) * 0.35, s = Math.sin(a) * 0.35; g.add(bar(V(c, 0.06 + dy(c, s), s), V(-c, 0.06 + dy(-c, -s), -s), 0.06, log)); }
       const stones = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.1, 0), flat(0x55505a), 8), o = new THREE.Object3D();
-      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; o.position.set(Math.cos(a) * 0.55, 0.06, Math.sin(a) * 0.55); o.rotation.set(rand(0, 6), rand(0, 6), 0); o.scale.setScalar(rand(0.7, 1.2)); o.updateMatrix(); stones.setMatrixAt(i, o.matrix); }
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, c = Math.cos(a) * 0.55, s = Math.sin(a) * 0.55; o.position.set(c, 0.06 + dy(c, s), s); o.rotation.set(rand(0, 6), rand(0, 6), 0); o.scale.setScalar(rand(0.7, 1.2)); o.updateMatrix(); stones.setMatrixAt(i, o.matrix); }
       g.add(stones);
       const flames = [0xff7a2a, 0xffd166].map((c, i) => { const f = new THREE.Mesh(new THREE.ConeGeometry(0.2 - i * 0.08, 0.55 - i * 0.15, 5).translate(0, (0.55 - i * 0.15) / 2, 0), new THREE.MeshBasicMaterial({ color: c })); f.position.y = 0.12; g.add(f); return f; });
       const light = new THREE.PointLight(0xff9a4a, 8, 10, 2); light.position.y = 0.7; g.add(light);
@@ -566,9 +575,9 @@ export function buildLandscape(view, v, P, W, sky, add) {
       if (ts) {
         const [tx, tz] = ts, tent = new THREE.Group(), cloth = flat(new THREE.Color(pick([0xe07a5f, 0x5b8c5a, 0xf2cc8f])).multiplyScalar(0.7));
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 1.6, 3), cloth); body.rotation.x = -Math.PI / 2; body.position.y = 0.42;
-        const door = new THREE.Mesh(new THREE.CircleGeometry(0.3, 3), DARK); door.rotation.z = Math.PI / 2; door.position.set(0, 0.32, 0.81);
+        const door = new THREE.Mesh(new THREE.CircleGeometry(0.3, 3), DARK); door.rotation.z = Math.PI / 2; door.position.set(0, 0.15, 0.81); // its sill on the ground
         tent.add(body, door);
-        tent.position.set(tx, view.groundY(tx, tz), tz); tent.rotation.y = rand(-0.3, 0.3);
+        tent.position.set(tx, view.groundY(tx, tz), tz); tent.quaternion.setFromUnitVectors(UP, slopeUp(tx, tz)); tent.rotateY(rand(-0.3, 0.3)); // pitched on the slope
         add(tent);
       }
     }
@@ -590,15 +599,16 @@ export function buildLandscape(view, v, P, W, sky, add) {
     const at = claim(view, rand(-8, 8), rand(-11, -5), 1.3, clear);
     if (at) {
       const [x, z] = at, boat = new THREE.Group(), wood = flat(0x8a5a3a);
-      // Half a cylinder, open side up, is a hull; double-sided so we can see into it.
+      // Half a cylinder, open side up, is a hull; double-sided so we can see into it. It rides with its floor just clear
+      // of the water, since the water is drawn right through anything below it, and nobody wants a flooded boat.
       const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 1.7, 5, 1, false, -Math.PI / 2, Math.PI), new THREE.MeshStandardMaterial({ color: 0xc8553d, flatShading: true, side: THREE.DoubleSide }));
-      hull.rotation.x = Math.PI / 2; hull.position.y = 0.3;
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.22), wood); seat.position.y = 0.22;
+      hull.rotation.x = Math.PI / 2; hull.position.y = 0.47;
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.04, 0.22), wood); seat.position.y = 0.39; // flush with the sides
       boat.add(hull, seat);
       const oars = [-1, 1].map((s) => {
-        const pv = new THREE.Group(); pv.position.set(s * 0.4, 0.3, 0);
+        const pv = new THREE.Group(); pv.position.set(s * 0.4, 0.47, 0); // the rowlock, on the gunwale
         const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.3), wood); blade.position.set(s * 1.0, -0.4, 0.3);
-        pv.add(bar(V(0, 0, 0), V(s * 1.0, -0.4, 0.3), 0.02, wood), blade); boat.add(pv);
+        pv.add(bar(V(-s * 0.35, 0.15, 0), V(s * 1.0, -0.4, 0.3), 0.02, wood), blade); boat.add(pv); // handle inboard over the seat, blade in the water
         return pv;
       });
       boat.position.set(x, 0, z); boat.rotation.y = rand(-0.6, 0.6);
@@ -636,7 +646,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
     const [m, hgt] = peaks.reduce((a, b) => (b[1] > a[1] ? b : a)), top = V(m.position.x, m.position.y + hgt / 2, m.position.z);
     add(bar(top, top.clone().add(V(0, 0.9, 0)), 0.03, DARK), false);
     const pv = add(new THREE.Group(), false), flag = new THREE.Mesh(new THREE.CircleGeometry(0.35, 3), new THREE.MeshBasicMaterial({ color: 0xe0442e, side: THREE.DoubleSide }));
-    flag.position.x = 0.2; pv.add(flag); pv.position.copy(top).add(V(0, 0.72, 0));
+    flag.position.x = 0.2; pv.add(flag); pv.position.copy(top).add(V(0, 0.6, 0)); // its top corner at the pole's top, not above it
     view.movers.push((t) => { pv.rotation.y = Math.sin(t * (W ? 6 : 2)) * 0.4; });
   }
 }

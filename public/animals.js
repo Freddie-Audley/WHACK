@@ -38,18 +38,19 @@ export function buildAnimals(view, v, add) {
   };
   const glow = new THREE.MeshStandardMaterial({ color: 0xfff6c0, emissive: 0xfff0a0, emissiveIntensity: 0.9, flatShading: true });
   const capGeo = new THREE.SphereGeometry(1, 7, 5), stickGeo = new THREE.CylinderGeometry(0.025, 0.025, 1, 4), leafGeo = new THREE.ConeGeometry(0.5, 0.2, 6);
-  const bandGeo = new THREE.CylinderGeometry(1, 1, 0.3, 7), coneGeo = new THREE.ConeGeometry(0.95, 1.4, 6), bobbleGeo = new THREE.SphereGeometry(0.3, 5, 4), stripeGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.2, 7);
+  const bandGeo = new THREE.CylinderGeometry(1, 1, 0.3, 7), coneGeo = new THREE.ConeGeometry(0.95, 1.4, 6), bobbleGeo = new THREE.SphereGeometry(0.3, 5, 4), stripeGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.2, 7);
+  const floppyGeo = coneGeo.clone().translate(0, 0.7, 0).applyMatrix4(new THREE.Matrix4().makeShear(0, 0, -0.5, 0, 0, 0)); // the nightcap: the same cone, base at the origin, sheared so it droops from its brim rather than tilting off it
   const lampGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16), lidGeo = new THREE.BoxGeometry(0.2, 0.05, 0.2);
   const shades = (parent, x, y, z, w, h, d) => { if (hot) part(parent, new THREE.BoxGeometry(w, h, d), dark, x, y, z); };
   const cap = (parent, x, y, z, r) => { if (snow) part(parent, capGeo, snowMat, x, y, z).scale.set(r, r * 0.4, r); };
   // A knitted hat, `r` across: white band, cone and bobble; the nightcap is taller, stripier and flops over.
   const hat = (parent, x, y, z, r, k, floppy) => {
-    const h = new THREE.Group(), top = new THREE.Group();
+    const h = new THREE.Group(), top = new THREE.Group(), lean = (y) => floppy ? -0.5 * y / 1.6 : 0; // where the drooping cone's axis has got to at height y
     part(h, bandGeo, snowMat, 0, 0.15, 0);
-    part(top, coneGeo, wool[k % 3], 0, floppy ? 1.1 : 0.65, 0).scale.y = floppy ? 1.6 : 1;
-    if (floppy) part(top, stripeGeo, snowMat, 0, 1.0, 0);
-    part(top, bobbleGeo, snowMat, 0, floppy ? 2.2 : 1.35, 0);
-    top.position.y = 0.3; top.rotation.z = floppy ? 0.5 : 0;
+    part(top, floppy ? floppyGeo : coneGeo, wool[k % 3], 0, floppy ? 0 : 0.65, 0).scale.y = floppy ? 1.6 : 1;
+    if (floppy) part(top, stripeGeo, snowMat, lean(1.0), 1.0, 0);
+    part(top, bobbleGeo, snowMat, lean(floppy ? 2.2 : 1.35), floppy ? 2.2 : 1.35, 0);
+    top.position.y = 0.3;
     h.add(top); h.position.set(x, y, z); h.scale.setScalar(r);
     parent.add(h);
     return h;
@@ -61,7 +62,7 @@ export function buildAnimals(view, v, add) {
     if (mat === pale) part(parent, bobbleGeo, wool[0], x, y + h + 0.15 * k, z).scale.setScalar(k * 0.3);
   };
   const brolly = (parent, x, y, z, h, k = 1) => { if (rain) canopy(parent, x, y, z, h, k, leaf); };
-  const parasol = (parent, x, y, z, h, k = 1) => { if (hot) canopy(parent, x, y, z, h, k, pale); };
+  const parasol = (parent, x, y, z, h, k = 1) => { if (hot && !rain) canopy(parent, x, y, z, h, k, pale); }; // the leaf does for both, and they would be put up in the same hand
   const lantern = (parent, x, y, z, h) => { // a lamp on a short pole, for whoever is on lantern duty
     if (!night) return;
     part(parent, stickGeo, dark, x, y + h / 2, z).scale.y = h;
@@ -98,7 +99,7 @@ export function buildAnimals(view, v, add) {
       part(head, skullGeo, hide, 0.25, 0, 0);
       part(head, snoutGeo, nose, 0.52, -0.08, 0);
       for (const sz of [-1, 1]) {
-        part(head, hornGeo, dark, 0.2, 0.28, sz * 0.15);
+        if (!snow && !night) part(head, hornGeo, dark, 0.2, 0.28, sz * 0.15); // the hat covers them, or they would poke out through it
         const ear = part(head, earGeo, hide, 0.15, 0.12, sz * (gale ? 0.24 : 0.27));
         ear.rotation.set(gale ? 0 : sz * 0.5, gale ? -sz * 1.1 : 0, 0); // pinned back in a gale
         const eye = googly(0.07, 0.46, 0.08, sz * 0.12); eye.rotation.y = Math.PI / 2; head.add(eye);
@@ -109,10 +110,10 @@ export function buildAnimals(view, v, add) {
       cow.add(head);
       const tail = part(cow, tailGeo, dark, -0.7, 1.15, 0);
       part(tail, tuftGeo, dark, 0, -0.5, 0);
-      cap(cow, -0.15, 1.22, 0, 0.5);
+      cap(cow, -0.15, 1.22, 0, 0.35); // no wider than the back, or its underside hangs out over the flanks
       if (snow) part(cow, scarfGeo, wool[(i + 1) % 3], 0.45, 1.0, 0);
       const scarfEnd = snow ? part(cow, scarfEndGeo, wool[(i + 1) % 3], 0.45, 0.95, 0.41) : null; // hangs down one side, or streams downwind
-      if (water) part(cow, ringGeo, wool[i % 3], 0.4, 1.0, 0).rotation.x = Math.PI / 2; // a rubber ring round the neck, to be on the safe side
+      if (water) part(cow, ringGeo, wool[i % 3], 0.72, 1.0, 0).rotation.x = Math.PI / 2; // a rubber ring round the neck, to be on the safe side; the head through the hole, chin resting on it
       brolly(cow, 0.1, 1.2, 0.2, 1.1);
       parasol(cow, 0.1, 1.2, 0.2, 1.1);
       if (i === 0) lantern(cow, -0.3, 1.2, 0, 0.8);
@@ -130,12 +131,15 @@ export function buildAnimals(view, v, add) {
       else view.movers.push((t) => {
         // Shuffles half a step forwards and back, puts its head down to graze now and then, swishes its tail at nothing.
         const u = gale ? 0 : Math.sin(t * 0.35 + p), x = x0 + Math.cos(fy) * u * 0.6, z = z0 - Math.sin(fy) * u * 0.6;
+        const dx = Math.cos(fy) * 0.5 * s, dz = -Math.sin(fy) * 0.5 * s; // where the front hooves stand, and the back ones
         cow.position.set(x, view.groundY(x, z), z);
+        cow.rotation.z = Math.atan2(view.groundY(x + dx, z + dz) - view.groundY(x - dx, z - dz), s); // pitched to the slope, so no hoof floats on a hillside
         step(t, gale ? 0 : Math.abs(Math.cos(t * 0.35 + p)) * 0.2);
         head.rotation.z = hot ? -0.3 + Math.sin(t * 7) * 0.03 : -0.7 * Math.max(0, Math.sin(t * 0.5 + p)); // or, in the heat, head hanging, panting
         tail.rotation.x = Math.sin(t * 2 + p) * 0.35;
-        if (gale) { // braced, tail and scarf streaming downwind
-          cow.rotation.z = -0.1 - gust(t) * 0.1; tail.rotation.z = -1.2 - gust(t) * 0.3 + Math.sin(t * 9) * 0.1;
+        if (gale) { // braced, tail and scarf streaming downwind; the lean pivots on the back hooves, so the front ones dig in rather than the back ones lifting off
+          const lean = 0.1 + gust(t) * 0.1;
+          cow.rotation.z -= lean; cow.position.y -= Math.sin(lean) * 0.5 * s; tail.rotation.z = -1.2 - gust(t) * 0.3 + Math.sin(t * 9) * 0.1;
           if (scarfEnd) scarfEnd.rotation.z = -1.3 - gust(t) * 0.2 + Math.sin(t * 11 + p) * 0.12;
         }
       });
@@ -156,8 +160,8 @@ export function buildAnimals(view, v, add) {
         const R = rand(2, 4), w = rand(0.4, 0.7) * (k ? -1 : 1), p = rand(0, 6), dy = rand(-1, 1);
         view.movers.push((t) => {
           const a = t * w + p, f = Math.sin(t * (gale ? 22 : 12) + p) * 0.6;
-          if (gale) { // facing into the wind, going backwards
-            const x = ((cx + R * Math.cos(a) * 0.4 + t * 2.5 + 20) % 40 + 40) % 40 - 20;
+          if (gale) { // facing into the wind, going backwards; the two flocks half a lap apart, so the sky is never empty of them
+            const x = ((cx + k * 20 + R * Math.cos(a) * 0.4 + t * 2.5 + 20) % 40 + 40) % 40 - 20;
             bird.position.set(x, cy + dy + Math.sin(t * 3 + p) * 0.4, cz + R * Math.sin(a) * 0.3);
             bird.rotation.set(Math.sin(t * 4 + p) * 0.2, -Math.PI / 2, Math.sin(t * 5 + p) * 0.3);
           } else { // round and round, banked into the turn, lifting a touch with each beat
@@ -174,7 +178,7 @@ export function buildAnimals(view, v, add) {
     const hankyGeo = new THREE.BoxGeometry(0.32, 0.06, 0.38), knotGeo = new THREE.SphereGeometry(0.045, 4, 3);
     for (let i = 0; i < 10; i++) {
       const fish = new THREE.Group();
-      snowboard(fish, -0.35);
+      if (water) snowboard(fish, -0.35); // on land it lies on its side, so the board goes on the ground under it instead (below)
       part(fish, bodyGeo, scales, 0, 0, 0).scale.set(1.6, 1, 0.6);
       const tail = part(fish, tailGeo, scales, -0.55, 0, 0); // fans out behind, its point buried in the body
       tail.rotation.z = -Math.PI / 2; tail.scale.z = 0.35;
@@ -190,26 +194,28 @@ export function buildAnimals(view, v, add) {
       fish.scale.setScalar(1.3 * rand(0.85, 1.15));
       fish.rotation.order = "YXZ"; // yaw, then roll about its own length, then pitch
       place(fish);
-      const [x0, z] = spot(water ? 1.4 : 0.8), y0 = view.groundY(x0, z), T = rand(2.5, 4), p = rand(0, 10), h = rand(1.2, 2.5);
-      if (!water) { // things planted in the ground beside it, since it can hold nothing itself
+      const [x0, z] = spot(water ? 1.4 : 1.1), y0 = view.groundY(x0, z), T = rand(2.5, 4), p = rand(0, 10), h = rand(1.2, 2.5); // on land it is over a unit long, tail and all
+      if (!water) { // things planted in the ground behind it, since it can hold nothing itself: far enough back that neither its nose nor its tail sweeps through them as it flops about
         const plot = new THREE.Group();
         plot.position.set(x0, y0, z);
-        brolly(plot, 0.7, 0, 0.3, 1.2);
-        if (i === 0) lantern(plot, -0.7, 0, 0.3, 0.8);
+        snowboard(plot, 0);
+        brolly(plot, 0.3, 0, -1.0, 1.2);
+        if (i === 0) lantern(plot, -0.6, 0, -0.9, 0.8);
         place(plot);
       }
       if (water) view.movers.push((t) => {
-        // Leap back and forth between two spots, waiting under water in between.
-        const n = Math.floor((t + p) / T), u = (t + p) / T - n, d = n % 2 ? -1 : 1, a = Math.min(1, u / 0.45);
-        fish.position.set(x0 + d * (2 * a - 1), u < 0.45 ? 4 * h * a * (1 - a) : -0.6, z);
-        fish.rotation.set(0, d > 0 ? 0 : Math.PI, Math.atan(2 * h * (1 - 2 * a)));
+        // Leap back and forth between two spots, waiting under water in between. The arc starts and ends at the waiting
+        // depth, well under the waves even with the tail up, so it goes in and comes out through the surface, not in a pop.
+        const n = Math.floor((t + p) / T), u = (t + p) / T - n, d = n % 2 ? -1 : 1, a = Math.min(1, u / 0.45), D = 1.4;
+        fish.position.set(x0 + d * (2 * a - 1), u < 0.45 ? 4 * (h + D) * a * (1 - a) - D : -D, z);
+        fish.rotation.set(0, d > 0 ? 0 : Math.PI, Math.atan(2 * (h + D) * (1 - 2 * a)));
         tail.rotation.y = Math.sin(t * 10 + p) * 0.5;
       });
       else view.movers.push((t) => {
         // Out of water: lying on its side, gasping, and every so often a hopeless flip onto the other side.
-        const F = 1.4, n = Math.floor((t + p) / F), u = (t + p) / F - n, flip = Math.min(1, u / 0.3);
+        const F = 1.4, n = Math.floor((t + p) / F), u = (t + p) / F - n, flip = Math.min(1, u / 0.3), yaw = (m) => Math.sin(m * 12.9898 + p) * 1.2;
         fish.position.set(x0, y0 + 0.25 + (u < 0.3 ? Math.sin(flip * Math.PI) * 0.6 : 0), z);
-        fish.rotation.set(Math.PI / 2 + Math.PI * (n + flip), Math.sin(n * 12.9898 + p) * 1.2, 0);
+        fish.rotation.set(Math.PI / 2 + Math.PI * (n + flip), yaw(n - 1) + (yaw(n) - yaw(n - 1)) * flip, 0); // it swings round to its new heading during the flip, not in a snap
         mouth.scale.y = 0.4 + Math.abs(Math.sin(t * 6 + p)) * 1.4;
         tail.rotation.y = Math.sin(t * 14 + p) * 0.3;
       });
@@ -221,7 +227,7 @@ export function buildAnimals(view, v, add) {
     const ringGeos = [0.42, 0.28, 0.14].map((r) => new THREE.TorusGeometry(r, 0.05, 4, 12));
     for (let i = 0; i < 4; i++) {
       const snail = new THREE.Group(), shell = new THREE.Group(), stalks = [];
-      snowboard(snail);
+      snowboard(snail, -0.07); // under the foot, which stands on it (and so rides that much higher, see below)
       const foot = part(snail, footGeo, skin, 0, 0.15, 0);
       part(shell, shellGeo, shellMat, 0, 0, 0).scale.z = 0.7;
       for (const sz of [-1, 1]) ringGeos.forEach((g, k) => part(shell, g, coil, 0.07 * k, -0.07 * k, sz * (0.44 + k * 0.04))); // the spiral: rings coiling in and down
@@ -242,12 +248,12 @@ export function buildAnimals(view, v, add) {
         stalks.push(stalk);
       }
       snail.scale.setScalar(1.4 * rand(0.85, 1.15));
-      const [x0, z] = spot(2.2), p = rand(0, 6), dd = rand(0, 1) < 0.5 ? 1 : -1, d = gale ? -1 : dd; // in a gale, facing into it
+      const [x0, z] = spot(2.2), p = rand(0, 6), dd = rand(0, 1) < 0.5 ? 1 : -1, d = gale ? -1 : dd, up = snow ? 0.07 * snail.scale.x : 0; // in a gale, facing into it
       snail.rotation.y = d > 0 ? 0 : Math.PI;
       place(snail);
       view.movers.push((t) => {
-        const x = x0 + d * (gale ? 1.5 - ((t * 0.06 + p) % 3) : ((t * 0.1 + p) % 3) - 1.5); // a long, slow crawl, or a long, slow drift; in a gale, slowly losing ground
-        snail.position.set(x, water ? -0.35 + Math.sin(t * 1.4 + p) * 0.08 : view.groundY(x, z), z);
+        const x = x0 + d * Math.sin(t * (gale ? 0.06 : 0.1) + p) * 1.5; // a long, slow crawl there and back, or a long, slow drift; in a gale, slowly losing ground and slowly clawing it back
+        snail.position.set(x, water ? -0.35 + Math.sin(t * 1.4 + p) * 0.08 : view.groundY(x, z) + up, z);
         snail.rotation.z = water ? Math.sin(t * 1.1 + p) * 0.12 : 0;
         foot.scale.set(1 + Math.sin(t * 3 + p) * 0.04, 1 + Math.sin(t * 3 + p + 1) * 0.12, 1); // the foot ripples along
         foot.position.y = 0.15 * foot.scale.y;
@@ -265,7 +271,7 @@ export function buildAnimals(view, v, add) {
       const octo = new THREE.Group(), arms = [], bubbles = [];
       part(octo, headGeo, skin, 0, 1.3, 0).scale.y = 1.25;
       octo.add(googly(0.14, -0.2, 1.25, 0.48), googly(0.14, 0.2, 1.25, 0.48));
-      shades(octo, 0, 1.25, 0.56, 0.72, 0.16, 0.1);
+      shades(octo, 0, 1.25, 0.58, 0.72, 0.16, 0.1);
       for (let k = 0; k < 8; k++) { // arms splay outwards all round, each in its own plane, jointed halfway so it can curl
         const a = k / 8 * Math.PI * 2, arm = new THREE.Group(), elbow = new THREE.Group();
         part(arm, upperGeo, skin, 0, 0, 0);
@@ -328,7 +334,7 @@ export function buildAnimals(view, v, add) {
       shades(head, 0.16, 0.15, 0, 0.16, 0.1, 0.58);
       if (snow) hat(head, -0.05, 0.19, 0, 0.2, i, false);
       brolly(head, -0.05, 0.15, 0, 0.5, 0.6); // a tiny one, balanced on the head
-      if (i === 0) lantern(head, -0.05, 0.15, 0, 0.5);
+      if (i === 0) lantern(head, -0.3, 0.1, 0, 0.5); // further back, clear of the brolly and the hat
       if (water) part(head, ringGeo, wool[i % 3], -0.3, -0.05, 0).rotation.x = Math.PI / 2; // a rubber ring round the neck, to be on the safe side
       const tongue = new THREE.Group(), stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.04), red);
       stem.position.x = 0.15;
@@ -347,7 +353,7 @@ export function buildAnimals(view, v, add) {
       // Slithers along, its body following the same S-shaped path its head took; in water, head up, swimming.
       const z = rand(-12, -3.5), d = rand(0, 1) < 0.5 ? 1 : -1, A = 0.35, c = 1.6;
       view.movers.push((t) => {
-        const s = t * 0.9 + p, x = d * ((s % 32) - 16);
+        const s = t * 0.9 + p, x = d * ((s % 40) - 20); // far enough out that the tail is off the edge of the frame before the lot jumps back
         const y = (k, wx) => water ? 0.02 + Math.max(0, 3 - k) * 0.12 : view.groundY(wx, z) + R * segs[k].scale.x;
         segs.forEach((seg, k) => { const wx = x - d * gap[k]; seg.position.set(wx, y(k, wx), z + d * A * Math.sin(c * (s - gap[k]))); });
         head.position.set(x, water ? 0.5 : view.groundY(x, z) + 0.25, z + d * A * Math.sin(c * s));

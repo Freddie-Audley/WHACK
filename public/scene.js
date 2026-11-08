@@ -155,7 +155,7 @@ export class Scene extends WorldView {
   constructor(container, boardCanvas, hue) {
     // Framed high and a step back: room over the head for the speech bubble. The describer's stage is the wide full
     // window, so its camera sits higher still, pushing the figure down for more bubble room.
-    const up = boardCanvas ? 0.2 : 0;
+    const up = boardCanvas ? 0.1 : 0;
     super(container, { camera: [0, 2.7 + up, 8.2], lookAt: [0, 2.3 + up, 0] });
     this.pose = "idle";
     this.buildAmbassador(boardCanvas, hue);

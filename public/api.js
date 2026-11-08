@@ -83,15 +83,16 @@ export async function interpret({ grid, categories, believed, previous }) {
   const cats = open.length ? open : categories; // everything known already: people kept drawing, so anything goes
   const out = await call(
     `${VOICE}
-You are looking at a stranger's whiteboard through a webcam. ${BOARD} It may be unfinished, and one picture can show several facts about their world.`,
+You are looking at a stranger's whiteboard through a webcam. ${BOARD} It may be unfinished. A picture is usually about one fact of their world, though sometimes it plainly shows a second.`,
     `Their board right now:
 ${grid.join("\n")}
 
 Possible facts (category: values):
 ${listCategories(cats)}
 For food, identify both what grows and where: ground mushrooms, bush berries, or fruit in tree branches.
+Animals are drawn small and simply: cows are a body on four legs, birds are V shapes or dots in the sky, fish an oval with a tail fin, snails a spiral shell, octopuses a round head with dangling legs, snakes one wavy line. Terrain fills the board: mountains are big triangles rising from the bottom, water is wavy lines right across, flat is a bare horizon. A shape with legs, a head, eyes, a shell or a tail is a creature, not land.
 ${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous?.readings.length ? `A moment ago you read this board as ${list(previous.readings)} and said "${previous.remark}". Update it if more has been drawn.\n` : ""}
-Give "readings": every fact this picture shows, each a category with one of its values. Give "remark", a line said out loud about the natives' world, not about the board: take the drawing as one of the possible facts above and say what that means for life there, literally and fondly (e.g. "Pebbles fall from their sky, so the natives wear hats." or "Three suns, so the natives never get a lie in." or "No animals at all, the natives must do their own mooing."). Never name things that are not among the possible facts, no doors, houses or faces. If nothing readable is there yet, say so about the natives instead (e.g. "The natives are still scribbling." or "Blank so far, the natives are thinking."). Under 12 words.`,
+Give "readings": the fact this picture is mainly about, each a category with one of its values, plus a second only when it is obviously there too. A plain line along the bottom for things to stand on is not a terrain fact. Give "remark", a line said out loud about the natives' world, not about the board: take the drawing as one of the possible facts above and say what that means for life there, literally and fondly (e.g. "Pebbles fall from their sky, so the natives wear hats." or "Three suns, so the natives never get a lie in." or "No animals at all, the natives must do their own mooing."). Never name things that are not among the possible facts, no doors, houses or faces. If nothing readable is there yet, say so about the natives instead (e.g. "The natives are still scribbling." or "Blank so far, the natives are thinking."). Under 12 words.`,
     {
       type: "object",
       properties: {

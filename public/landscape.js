@@ -88,7 +88,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
     view.movers.push((t) => { const k = (t * 0.35 + p) % 3; r.scale.setScalar(0.3 + k); r.position.set(x, wave(x, z, t) + 0.03, z); r.material.opacity = 0.7 * (1 - k / 3); });
   }
 
-  // Suns, moon, ring, stars: flat discs far away, untouched by fog. The sky stays empty until the suns are known.
+  // Suns, moon, stars: flat discs far away, untouched by fog. The sky stays empty until the suns are known.
   view.reseed(2);
   const disc = (r, colour, opacity = 1) => new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ color: colour, fog: false, transparent: opacity < 1, opacity }));
   const n = { "no sun": 0, "one sun": 1, "two suns": 2, "three suns": 3 }[v.suns] ?? 0;
@@ -106,10 +106,6 @@ export function buildLandscape(view, v, P, W, sky, add) {
     let x, y;
     for (let i = 0; i < 12; i++) { x = rand(-14, 14); y = rand(9, 13); if (suns.every(([sx, sy, sr]) => Math.hypot(x - sx, y - sy) > sr + r + 0.5)) break; }
     add(disc(r, 0xf4f1e8, 0.9), false).position.set(x, y, -29);
-  }
-  if (known("suns") && rand(0, 1) < 0.35) {
-    const ring = add(new THREE.Mesh(new THREE.TorusGeometry(rand(4, 7), 0.12, 4, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.leaf).lerp(sky, 0.5), fog: false })), false);
-    ring.position.set(rand(-6, 6), 11, -31); ring.rotation.x = rand(1.1, 1.4);
   }
   if (v.suns === "no sun") add(new THREE.Points(new THREE.BufferGeometry().setAttribute("position",
     new THREE.Float32BufferAttribute(Array.from({ length: 500 }, () => [rand(-40, 40), rand(4, 30), rand(-40, -10)]).flat(), 3)),

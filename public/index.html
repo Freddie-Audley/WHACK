@@ -20,8 +20,13 @@
   body.describe #stage, body.guess #stage, body.guess #imagined, body.guess #cam { display: block; }
   #stage { left: 8px; right: 8px; }
   #stage canvas, #imagined canvas { display: block; }
-  .bubble { position: absolute; max-width: min(60%, 520px); padding: 12px 16px; border-radius: 18px; background: rgba(255,255,255,.92); color: #1d1d3a; font-size: 26px; line-height: 1.25; white-space: pre-wrap; pointer-events: none; transition: opacity .3s; box-shadow: 0 4px 18px rgba(40,30,80,.15), 0 0 0 1px rgba(255,255,255,.5); }
-  .bubble::after { content: ""; position: absolute; top: 100%; left: var(--tail, 50%); width: 18px; height: 12px; margin-left: -9px; background: inherit; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  /* The ambassador's speech bubble. scene.js shrinks --fs until it fits above the head (see placeBubble). */
+  .bubble { position: absolute; left: 0; top: 0; max-width: min(62%, 540px); padding: 12px 18px 13px; border-radius: 22px; background: linear-gradient(#fff, #f5f2ff); color: #1d1d3a; font-size: var(--fs, 26px); font-weight: 500; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; pointer-events: none; transition: opacity .3s; transform-origin: var(--tail, 50%) 100%; box-shadow: 0 8px 26px rgba(40,30,80,.18), 0 1px 3px rgba(40,30,80,.08), inset 0 1px 0 #fff, 0 0 0 1.5px rgba(120,100,200,.16); }
+  .bubble.pop { animation: bubble-in .28s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(.94); } }
+  /* The tail: a rounded diamond tucked half under the bubble's bottom edge, pointing at the head. */
+  .bubble::after { content: ""; position: absolute; bottom: -7px; left: var(--tail, 50%); width: 15px; height: 15px; background: #f5f2ff; border-radius: 0 0 4px 0; transform: translateX(-50%) rotate(45deg); box-shadow: 1.5px 1.5px 0 rgba(120,100,200,.16), 4px 4px 8px rgba(40,30,80,.08); }
+  .bubble.over::after { display: none; } /* squeezed down onto the head, so no tail */
   body.raised .bubble { opacity: 0; }
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 20; }
   body.guess #stage { right: calc(50% + 4px); }
@@ -82,6 +87,12 @@
   #back { display: none; position: fixed; top: 6px; left: 84px; z-index: 21; gap: 8px; }
   #back button { padding: 5px 14px; font-size: 13px; }
   body.describe #back, body.guess #back, body.earth #back { display: flex; }
+  /* The keyboard shortcuts, under the choices: the buttons' white, but fainter and without their shadow and rim,
+     so it reads as a label rather than another button. Desktop only (phones skip the menu, and have no keys anyway). */
+  #keys { display: flex; gap: 18px; margin-top: 26px; padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 500; color: #1d1d3a; visibility: hidden; background: rgba(255,255,255,.18); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); }
+  body.ready #keys { visibility: visible; }
+  #keys kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-right: 6px; padding: 0 5px; border-radius: 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1; color: #1d1d3a; background: #fff; box-shadow: 0 1px 0 1px rgba(40,30,80,.15); }
+  @media (pointer: coarse) { #keys { display: none; } }
   #nokey { margin-top: 12px; color: #c0392b; display: none; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
@@ -159,6 +170,11 @@
       <button id="startA">Be the alien</button>
       <button id="startB">Be the listener</button>
       <button id="startE">Be Earth</button>
+    </div>
+    <div id="keys">
+      <span><kbd>R</kbd>Reset</span>
+      <span><kbd>B</kbd>Back to menu</span>
+      <span><kbd>Q</kbd>Quit</span>
     </div>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>
   </div>

@@ -131,7 +131,6 @@ let pending = null;      // guesser: reading of the board that is up right now; 
 let firstWords = [];     // guesser: lines for the moment a board comes up, fetched at the start
 const drawings = [];     // describer: one promise per board, requested up front
 const describer = () => role === "a";
-let over = false;         // the encounter has ended: R goes back to the menu
 // On a phone (in the browser or from the home screen) the app is only the board over Earth, so skip the menu.
 const phoneApp = touchOnly || navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
@@ -196,7 +195,6 @@ async function describe() {
     say(null);
     await sleep(1500);
   }
-  over = true;
 }
 
 // Guesser: their board is up. Keep reading it as the drawing grows, thinking aloud and changing
@@ -296,7 +294,6 @@ async function wipe() {
 async function earth() {
   role = "earth";
   t0 = performance.now();
-  over = true; // nothing to finish: R goes back whenever
   await growWindow();
   $("start").classList.add("hide");
   document.activeElement?.blur(); // keys belong to the game now, not the menu button
@@ -320,7 +317,6 @@ async function start(r) {
   peer = new WebcamPeer($("video"), $("preview"), $("overlay"), +q.get("th") || 0.008);
   openers({ n: pictures.length + 1 }).then((l) => { firstWords = l; }).catch((e) => log(`error: ${e.message}`));
   await peer.start();
-  over = true; // nothing ends on its own: R goes back whenever
   guess();
 }
 
@@ -335,7 +331,8 @@ addEventListener("gesturestart", (e) => e.preventDefault());
 addEventListener("keydown", (e) => {
   if (e.code === "KeyQ") { e.preventDefault(); window.__TAURI__?.core.invoke("quit"); return; }
   if (!t0) return; // still on the menu
-  if (e.code === "KeyR" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); if (over) menu(); } // leave Cmd/Ctrl+R to reload
+  if (e.code === "KeyR" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); reset(); } // leave Cmd/Ctrl+R to reload
+  if (e.code === "KeyB" && !e.metaKey && !e.ctrlKey && !phoneApp) { e.preventDefault(); menu(); } // as Back to menu (phones have no menu)
   if (e.key === "Enter" && role === "earth") { e.preventDefault(); wipe(); }
 });
 

@@ -69,7 +69,7 @@ export class WorldView {
 
   // Rebuild the backdrop from facts {suns, wind, animals, terrain, weather}. An unknown fact leaves its
   // part of the world white: no facts at all is a blank white void, and each fact paints its own piece in.
-  // Palette, tree shapes, moons and rings are random (per view), so no two worlds look the same.
+  // Palette, tree shapes and moons are random (per view), so no two worlds look the same.
   showWorld(v) {
     this.world.clear();
     this.movers = [];
@@ -139,8 +139,6 @@ export class Scene extends WorldView {
     G.sunhat.visible = this.hot && !snow && !rain; // one hat at a time: the woolly or the sou'wester wins
     if (this.topper) this.topper.visible = !(snow || rain || this.hot); // and the bowler or flower comes off for any of them
     this.headTop = snow ? this.crown + 0.45 : rain || this.hot ? this.crown + 0.3 : this.headTop0;
-    if (this.monocle) this.monocle.visible = !this.hot; // not over the shades
-    G.shades.visible = this.hot;
     if (G.fan) G.fan.visible = this.hot;
     G.torch.visible = dark;
     for (const e of this.eyes) e.material = dark ? this.glow : WHITE;
@@ -338,10 +336,8 @@ export class Scene extends WorldView {
     const brim = at(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.04, 10), belly), 0, ht, -0.1);
     brim.scale.z = 1.25;
     G.souwester = hat(brim, at(new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), belly), 0, ht - 0.01, 0));
-    // Three suns: a wide sun hat, shades across however many eyes there are, and a fan for the hand that is free.
+    // Three suns: a wide sun hat and a fan for the hand that is free.
     G.sunhat = hat(at(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.03, 10), white), 0, ht, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.16, 10), belly), 0, ht + 0.08, 0));
-    G.shades = at(new THREE.Mesh(new THREE.BoxGeometry(this.teleEye.position.x * 2 + es * 2.8, es * 1.5 + (ne === 3 ? es : 0), 0.12), dark), 0, 0.05 + (ne === 3 ? es / 2 : 0), hr * 0.85 + es * 0.6);
-    this.head.add(G.shades);
     if (!boardCanvas) {
       G.fan = at(new THREE.Mesh(new THREE.CircleGeometry(0.25, 7, 0, Math.PI), new THREE.MeshStandardMaterial({ color: belly.color, flatShading: true, side: THREE.DoubleSide })), 0, -this.al + 0.08, 0.06);
       G.fan.rotation.x = 2.0; // faces the camera once the arm is up
@@ -362,7 +358,7 @@ export class Scene extends WorldView {
     G.ring.rotation.x = Math.PI / 2;
     G.ring.position.y = mid;
     this.body.add(G.scarf, G.wellies, G.ring);
-    for (const g of [G.scarf, G.shades, G.torch, G.wellies, G.ring, G.fan]) if (g) g.visible = false;
+    for (const g of [G.scarf, G.torch, G.wellies, G.ring, G.fan]) if (g) g.visible = false;
     this.crown = H.top; this.headTop0 = this.headTop; // where the bubble goes with and without a weather hat
     shade(this.body);
     this.gaze = { y: 0, z: 0, next: 0 };
@@ -412,8 +408,30 @@ export class Scene extends WorldView {
   }
 
   say(text) {
-    this.bubble.hidden = !text;
-    this.bubble.textContent = text;
+    const b = this.bubble;
+    b.hidden = !text;
+    if (b.textContent !== (text ?? "")) {
+      b.textContent = text ?? "";
+      this.bubbleFit = null; // new words: work out the font size again
+      b.classList.remove("pop");
+      void b.offsetWidth; // restart the pop-in animation
+      if (text) b.classList.add("pop");
+    }
+  }
+
+  // Largest font size (26px down to 14px) at which the bubble is no taller than `room`; the smallest if none is.
+  // If even 14px is too tall at the usual width, the bubble is allowed to go nearly the full stage width.
+  fitBubble(room) {
+    const b = this.bubble, BIG = 26, SMALL = 14;
+    b.style.left = "0px"; // measure with the whole stage width available
+    const fits = (fs) => { b.style.setProperty("--fs", `${fs}px`); return b.offsetHeight <= room; };
+    b.style.maxWidth = ""; // the stylesheet's width first
+    if (fits(BIG)) return BIG;
+    if (!fits(SMALL)) b.style.maxWidth = "calc(100% - 20px)"; // a lot to say: let it spread across the stage
+    let lo = SMALL, hi = BIG - 1; // binary search for the largest size that fits
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fits(mid)) lo = mid; else hi = mid - 1; }
+    fits(lo);
+    return lo;
   }
 
   placeBubble() {
@@ -423,14 +441,22 @@ export class Scene extends WorldView {
     v.project(this.camera);
     const W = this.container.clientWidth, H = this.container.clientHeight;
     const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H; // top of the head on screen
-    const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight, GAP = 12, M = 8;
-    // Centred above the head; slides sideways only as far as needed to stay on the stage.
+    const GAP = 14, M = 10;
+    const room = Math.min(y, H) - GAP - M; // space between the stage's top edge and the head
+    // Refit only when the words, the stage width or the room above the head have changed noticeably.
+    // (room is rounded down to a step of 6px so the fit stays valid while the head bobs a little.)
+    const step = Math.floor(room / 6) * 6, key = `${W}|${step}`;
+    if (this.bubbleFit !== key) { this.fitBubble(step); this.bubbleFit = key; }
+    const bw = this.bubble.offsetWidth, bh = this.bubble.offsetHeight;
+    // Centred above the head; slides sideways only as far as needed to stay on the stage. If even the smallest
+    // text is too tall for the room above the head, it sits at the top of the stage over the head, without a tail.
     const left = Math.min(Math.max(x - bw / 2, M), W - bw - M);
-    const top = Math.max(y - GAP - bh, M);
+    const top = Math.max(Math.min(y - GAP - bh, H - bh - M), M);
+    this.bubble.classList.toggle("over", top + bh + GAP > y + 1);
     this.bubble.style.left = `${Math.round(left)}px`;
     this.bubble.style.top = `${Math.round(top)}px`;
     // The tail keeps pointing at the head even when the bubble has slid sideways to stay on the stage.
-    this.bubble.style.setProperty("--tail", `${Math.min(Math.max(x - left, 24), bw - 24)}px`);
+    this.bubble.style.setProperty("--tail", `${Math.min(Math.max(x - left, 26), bw - 26)}px`);
   }
 
   tick(t) {

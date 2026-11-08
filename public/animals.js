@@ -7,7 +7,7 @@ export function buildAnimals(view, v, add) {
   // in rubber rings, snails float shell-up, fish leap, octopuses peek out through snorkels, snakes swim with their
   // heads up in rubber rings. On land: fish flop about gasping, and octopuses wear fishbowls. In a gale the birds
   // flap flat out and still get blown backwards, the cows brace nose-first into it with their ears pinned back and
-  // the snails slowly lose ground; somebody's hat blows past. Under three suns everyone wears sunglasses and wilts,
+  // the snails slowly lose ground; somebody's hat blows past. Under three suns everyone wilts,
   // the cows and snails under parasols, the beached fish in a knotted hanky. In snow everyone gets a bobble hat and the
   // cows a scarf; in rain everyone puts a leaf up. With no sun their eyes glow, the cows and snails wear nightcaps,
   // and one of each herd is on lantern duty.
@@ -41,7 +41,6 @@ export function buildAnimals(view, v, add) {
   const bandGeo = new THREE.CylinderGeometry(1, 1, 0.3, 7), coneGeo = new THREE.ConeGeometry(0.95, 1.4, 6), bobbleGeo = new THREE.SphereGeometry(0.3, 5, 4), stripeGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.2, 7);
   const floppyGeo = coneGeo.clone().translate(0, 0.7, 0).applyMatrix4(new THREE.Matrix4().makeShear(0, 0, -0.5, 0, 0, 0)); // the nightcap: the same cone, base at the origin, sheared so it droops from its brim rather than tilting off it
   const lampGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16), lidGeo = new THREE.BoxGeometry(0.2, 0.05, 0.2);
-  const shades = (parent, x, y, z, w, h, d) => { if (hot) part(parent, new THREE.BoxGeometry(w, h, d), dark, x, y, z); };
   const cap = (parent, x, y, z, r) => { if (snow) part(parent, capGeo, snowMat, x, y, z).scale.set(r, r * 0.4, r); };
   // A knitted hat, `r` across: white band, cone and bobble; the nightcap is taller, stripier and flops over.
   const hat = (parent, x, y, z, r, k, floppy) => {
@@ -104,7 +103,6 @@ export function buildAnimals(view, v, add) {
         ear.rotation.set(gale ? 0 : sz * 0.5, gale ? -sz * 1.1 : 0, 0); // pinned back in a gale
         const eye = googly(0.07, 0.46, 0.08, sz * 0.12); eye.rotation.y = Math.PI / 2; head.add(eye);
       }
-      shades(head, 0.5, 0.08, 0, 0.08, 0.14, 0.46);
       hatOn(head, 0.15, 0.2, 0, 0.22, i);
       head.position.set(0.5, 1.1, 0); // the skull sits into the shoulders
       cow.add(head);
@@ -185,7 +183,6 @@ export function buildAnimals(view, v, add) {
       part(fish, finGeo, scales, -0.05, 0.3, 0).scale.z = 0.4;
       const mouth = part(fish, mouthGeo, dark, 0.47, 0, 0);
       for (const sz of [-1, 1]) { const eye = googly(0.08, 0.25, 0.08, sz * 0.15); eye.rotation.y = sz > 0 ? 0 : Math.PI; fish.add(eye); }
-      shades(fish, 0.26, 0.08, 0, 0.2, 0.1, 0.5);
       if (snow) hat(fish, 0.15, 0.27, 0, 0.15, i, false);
       if (hot && !water) { // beached: a knotted hanky on its head, like a proper day at the seaside
         part(fish, hankyGeo, snowMat, 0.15, 0.3, 0);
@@ -241,7 +238,6 @@ export function buildAnimals(view, v, add) {
         const stalk = new THREE.Group();
         part(stalk, rodGeo, skin, 0, 0.3, 0);
         const eye = googly(0.1, 0, 0.62, 0); eye.rotation.y = Math.PI / 2; stalk.add(eye); // looking ahead
-        shades(stalk, 0.07, 0.62, 0, 0.06, 0.1, 0.26);
         stalk.position.set(0.75, 0.2, sz * 0.12); // rooted in the front of the foot
         stalk.rotation.x = sz * 0.25;
         snail.add(stalk);
@@ -271,7 +267,6 @@ export function buildAnimals(view, v, add) {
       const octo = new THREE.Group(), arms = [], bubbles = [];
       part(octo, headGeo, skin, 0, 1.3, 0).scale.y = 1.25;
       octo.add(googly(0.14, -0.2, 1.25, 0.48), googly(0.14, 0.2, 1.25, 0.48));
-      shades(octo, 0, 1.25, 0.58, 0.72, 0.16, 0.1);
       for (let k = 0; k < 8; k++) { // arms splay outwards all round, each in its own plane, jointed halfway so it can curl
         const a = k / 8 * Math.PI * 2, arm = new THREE.Group(), elbow = new THREE.Group();
         part(arm, upperGeo, skin, 0, 0, 0);
@@ -331,7 +326,6 @@ export function buildAnimals(view, v, add) {
       skull.scale.set(1.4, 0.75, 1);
       head.add(skull);
       for (const sz of [-1, 1]) { const eye = googly(0.09, 0.12, 0.15, sz * 0.2); eye.rotation.y = sz > 0 ? 0.8 : Math.PI - 0.8; head.add(eye); }
-      shades(head, 0.16, 0.15, 0, 0.16, 0.1, 0.58);
       if (snow) hat(head, -0.05, 0.19, 0, 0.2, i, false);
       brolly(head, -0.05, 0.15, 0, 0.5, 0.6); // a tiny one, balanced on the head
       if (i === 0) lantern(head, -0.3, 0.1, 0, 0.5); // further back, clear of the brolly and the hat

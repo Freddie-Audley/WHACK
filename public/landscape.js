@@ -268,7 +268,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
   // Food grows where the listener can see it, with a different silhouette for each kind.
   view.reseed(12);
   if (known("food")) {
-    const soil = flat(tint(0x76513a)), stem = flat(tint(0x4f813f));
+    const soil = flat(tint(0x76513a));
     const fruitMaterial = (color) => new THREE.MeshStandardMaterial({
       color, emissive: color,
       emissiveIntensity: v.weather === "rain" || v.weather === "snow" ? 0.55 : 0.25,
@@ -282,6 +282,13 @@ export function buildLandscape(view, v, P, W, sky, add) {
         if (at) return at;
       }
       return null;
+    };
+    // On water each patch gets a rock of its own to grow on, like the ambassador's, standing clear of the waves.
+    const footing = (x, z, r) => {
+      if (!water) return view.groundY(x, z);
+      const islet = add(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.9, r * 1.05, 0.5, 7), flat(0x8a8277)));
+      islet.position.set(x, 0, z); islet.rotation.y = rand(0, 6);
+      return 0.25;
     };
     if (v.food === "mushrooms on the ground") {
       const cap = flat(tint(0xe56f58)), paleCap = flat(tint(0xf0c66c)), stalk = flat(tint(0xf3e7c7));
@@ -300,25 +307,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
           mushroom.position.set(Math.cos(a) * d, view.groundY(x + Math.cos(a) * d, z + Math.sin(a) * d), Math.sin(a) * d); // each on its own bit of hillside
           group.add(mushroom);
         }
-        group.position.set(x, 0, z);
-        add(group);
-      }
-    } else if (v.food === "crops in fields") {
-      const count = 2 + (rand(0, 2) | 0);
-      for (let field = 0; field < count; field++) {
-        const at = place(1.7, field);
-        if (!at) continue;
-        const [x, z] = at, group = new THREE.Group(), grain = flat(tint(0xe6bd61));
-        for (let row = -2; row <= 2; row++) for (let i = 0; i < 7; i++) {
-          const px = row * 0.36, pz = (i - 3) * 0.38, h = rand(0.55, 0.95), gy = view.groundY(x + px, z + pz) - view.groundY(x, z); // the field follows the hillside
-          const stalkMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, h, 4), stem);
-          stalkMesh.position.set(px, gy + h / 2, pz);
-          const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 5), grain);
-          head.position.set(px, gy + h + 0.08, pz);
-          group.add(stalkMesh, head);
-        }
-        group.position.set(x, view.groundY(x, z), z);
-        swayInWind(group, 0.25);
+        group.position.set(x, footing(x, z, 0.9), z);
         add(group);
       }
     } else if (v.food === "berries in bushes") {
@@ -341,7 +330,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
           b.position.set(bx, by, bz);
           group.add(b);
         }
-        group.position.set(x, view.groundY(x, z), z);
+        group.position.set(x, footing(x, z, 0.85), z);
         swayInWind(group);
         add(group);
       }
@@ -365,7 +354,7 @@ export function buildLandscape(view, v, P, W, sky, add) {
           apple.position.set(Math.cos(a) * 0.74, 1.65 + (i % 2) * 0.35, Math.sin(a) * 0.66); // half out of the canopy's faces, so they read as fruit, not blotches
           group.add(apple);
         }
-        group.position.set(x, view.groundY(x, z), z);
+        group.position.set(x, footing(x, z, 1.1), z);
         swayInWind(group);
         add(group);
       }

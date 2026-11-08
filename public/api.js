@@ -51,7 +51,7 @@ async function call(system, content, schema, effort, timeout = 20000, attempt = 
 export async function draw({ facts }) {
   return call(
     `${VOICE}
-You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board. Draw every listed fact accurately, and do not add other world details. If an animal is listed, draw only that species, not other animals. For food, clearly show where it grows: mushrooms on the ground, crops in rows, berries on bushes, or fruit attached to tree branches. When a fact is an absence (no sun, still air, no animals, nothing falling) the board must still not be blank: draw the place where it would be, like bare ground under an empty sky, or the stranger will see nothing.`,
+You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board. Draw every listed fact accurately, and do not add other world details. If an animal is listed, draw only that species, not other animals. For food, clearly show where it grows: mushrooms on the ground, berries on bushes, or fruit attached to tree branches. When a fact is an absence (no sun, still air, no animals, nothing falling) the board must still not be blank: draw the place where it would be, like bare ground under an empty sky, or the stranger will see nothing.`,
     `Draw this detail about home accurately and prominently:
 ${facts.map((f) => `- ${f.category.label}: ${f.value}`).join("\n")}
 Also give "before", a line said out loud just before drawing: what you are about to draw and how, said plainly (e.g. "Two round suns, one bigger than the other." or "Wavy lines for our wind, which is hard to draw." or "An octopus now, this one takes a while."). Only now and then a doubt about how it will look, and never "I hope". Under 12 words.`,
@@ -89,7 +89,7 @@ ${grid.join("\n")}
 
 Possible facts (category: values):
 ${listCategories(cats)}
-For food, identify both what grows and where: ground mushrooms, field crops, bush berries, or fruit in tree branches.
+For food, identify both what grows and where: ground mushrooms, bush berries, or fruit in tree branches.
 ${known ? `From earlier boards you already know: ${known}. That is settled. This board is about something else.\n` : ""}${previous?.readings.length ? `A moment ago you read this board as ${list(previous.readings)} and said "${previous.remark}". Update it if more has been drawn.\n` : ""}
 Give "readings": every fact this picture shows, each a category with one of its values. Give "remark", a line said out loud about the natives' world, not about the board: take the drawing as one of the possible facts above and say what that means for life there, literally and fondly (e.g. "Pebbles fall from their sky, so the natives wear hats." or "Three suns, so the natives never get a lie in." or "No animals at all, the natives must do their own mooing."). Never name things that are not among the possible facts, no doors, houses or faces. If nothing readable is there yet, say so about the natives instead (e.g. "The natives are still scribbling." or "Blank so far, the natives are thinking."). Under 12 words.`,
     {

@@ -108,11 +108,11 @@
   button:hover { --back: rgba(255,255,255,.65); }
   button:active { --back: rgba(255,255,255,.8); transform: scale(.97); box-shadow: 0 2px 8px rgba(40,30,80,.10), inset 0 0 0 1px rgba(255,255,255,.7); }
   /* The keyboard shortcuts: under the choices on the menu, and centred in the title bar while a
-     role is on (clicking one does the same as the key). The buttons' white, but fainter and without their shadow and
-     rim, so it reads as a label rather than another button. Desktop only (phones skip the menu, and have no keys anyway). */
-  #keys { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 21; display: flex; gap: 18px; padding: 5px 14px; white-space: nowrap; border-radius: 999px; font-size: 13px; font-weight: 500; color: #1d1d3a; visibility: hidden; background: rgba(255,255,255,.18); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); }
+     role is on (clicking one does the same as the key). Bare text, no panel behind it, so it reads as a label
+     rather than another button. Desktop only (phones skip the menu, and have no keys anyway). */
+  #keys { position: fixed; bottom: 17px; left: 50%; transform: translateX(-50%); z-index: 21; display: flex; gap: 18px; white-space: nowrap; font-size: 13px; font-weight: 500; color: #1d1d3a; visibility: hidden; }
   body.ready #keys { visibility: visible; }
-  body.describe #keys, body.guess #keys, body.earth #keys { top: 9px; bottom: auto; padding: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; } /* centred in the title bar, level with the traffic lights, bare */
+  body.describe #keys, body.guess #keys, body.earth #keys { top: 9px; bottom: auto; } /* centred in the title bar, level with the traffic lights */
   #keys kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-right: 6px; padding: 0 5px; border-radius: 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1; color: #1d1d3a; background: #fff; box-shadow: 0 1px 0 1px rgba(40,30,80,.15); }
   @media (pointer: coarse) { #keys { display: none; } }
   #nokey { margin-top: 12px; color: #c0392b; display: none; }

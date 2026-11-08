@@ -51,8 +51,8 @@ async function call(system, content, schema, effort, timeout = 20000, attempt = 
 export async function draw({ facts }) {
   return call(
     `${VOICE}
-You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board. For food, clearly show where it grows: mushrooms on the ground, crops in rows, berries on bushes, or fruit attached to tree branches. When a fact is an absence (no sun, still air, no animals, nothing falling) the board must still not be blank: draw the place where it would be, like bare ground under an empty sky, or the stranger will see nothing.`,
-    `Draw ${facts.length > 1 ? "all of this about home in one picture" : "this about home"}:
+You are showing the stranger what your own home planet is like, and you can only do it by drawing on a whiteboard. Speak of home as yours ("we", "our", "at home"), never as theirs. ${BOARD} No letters, digits, arrows or symbols: draw the thing itself, big and bold, filling the board. Draw every listed fact accurately, and do not add other world details. If an animal is listed, draw only that species, not other animals. For food, clearly show where it grows: mushrooms on the ground, crops in rows, berries on bushes, or fruit attached to tree branches. When a fact is an absence (no sun, still air, no animals, nothing falling) the board must still not be blank: draw the place where it would be, like bare ground under an empty sky, or the stranger will see nothing.`,
+    `Draw this detail about home accurately and prominently:
 ${facts.map((f) => `- ${f.category.label}: ${f.value}`).join("\n")}
 Also give "before", a line said out loud just before drawing: what you are about to draw and how, said plainly (e.g. "Two round suns, one bigger than the other." or "Wavy lines for our wind, which is hard to draw." or "An octopus now, this one takes a while."). Only now and then a doubt about how it will look, and never "I hope". Under 12 words.`,
     {
@@ -117,8 +117,8 @@ Give "readings": every fact this picture shows, each a category with one of its 
   for (const r of out.readings) {
     const cat = cats.find((c) => c.id === r.category);
     if (!cat) continue;
-    const v = r.value.toLowerCase();
-    byCategory[cat.id] = { category: cat.id, value: cat.values.includes(r.value) ? r.value : cat.values.find((x) => v.includes(x) || x.includes(v)) || cat.values[0] };
+    const value = cat.values.find((x) => x.toLowerCase() === r.value.trim().toLowerCase());
+    if (value) byCategory[cat.id] = { category: cat.id, value };
   }
   out.readings = Object.values(byCategory);
   return out;

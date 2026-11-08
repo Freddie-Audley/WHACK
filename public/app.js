@@ -13,7 +13,6 @@ const HOLD_MS = 3000;                        // how long the finished board stay
 // Describer: time to read what it says it's about to draw, longer for longer lines.
 const readMs = (text) => Math.min(5000, Math.max(1500, 800 + 55 * plain(text).length));
 const PAUSE_MS = +q.get("pause") || 2000;    // guesser: pause between one line of commentary and the next look at the board
-const PICTURES = 4;                          // the describer gets this many boards for the whole world; people can add more after
 const IDLE = ["Hello?", "Take your time, natives.", "I can wait.", "Is this thing on?", "Still here.", "The natives are quiet."];
 let role = "a";
 const world = generateWorld();
@@ -31,10 +30,15 @@ const customWorldValues = Object.fromEntries(CATEGORIES.map((category) => {
 const customWorldReplay = q.get("world") === "custom";
 if (customWorldReplay) Object.assign(world.values, customWorldValues);
 world.order = world.order.slice(0, N);
-// The facts shared out over the boards as evenly as possible.
-const pictures = Array.from({ length: Math.min(PICTURES, N) }, () => []);
-world.order.forEach((id, i) => pictures[i % pictures.length].push(id));
-const describeFacts = (ids) => ids.map((id) => `${CATEGORIES.find((c) => c.id === id).label}: ${world.values[id]}`).join(", ");
+// Give each fact its own board so the ambassador can draw it without combining details.
+const orderedFacts = world.order.flatMap((id) => {
+  const value = world.values[id];
+  return id === "animals" && Array.isArray(value)
+    ? value.map((animal) => ({ id, value: animal }))
+    : [{ id, value }];
+});
+const pictures = orderedFacts.map((fact) => [fact]);
+const describeFacts = (facts) => facts.map(({ id, value }) => `${CATEGORIES.find((c) => c.id === id).label}: ${value}`).join(", ");
 
 const $ = (id) => document.getElementById(id);
 const elapsed = () => t0 ? ((performance.now() - t0) / 1000).toFixed(1) : "0.0";
@@ -214,14 +218,19 @@ function showGuesses() {
   imagined.showWorld(known);
 }
 
-// Every picture is requested at the start, so drawing never waits on the model.
+// Queue drawings from the start so the API only handles one request at a time.
 // A board that came back (nearly) blank, as "no sun" or "nothing" sometimes does, is asked for once more.
 function prefetch() {
-  pictures.forEach((ids, k) => {
-    const facts = ids.map((id) => ({ category: CATEGORIES.find((c) => c.id === id), value: world.values[id] }));
-    drawings[k] = draw({ facts })
-      .then((out) => ink(cleanGrid(out.rows)) >= 8 ? out : (log(`redraw: "${describeFacts(ids)}" came back blank`), draw({ facts })))
-      .catch((e) => { log(`error: ${e.message}`); return null; });
+  let queue = Promise.resolve();
+  pictures.forEach((picture, k) => {
+    const facts = picture.map(({ id, value }) => ({ category: CATEGORIES.find((c) => c.id === id), value }));
+    drawings[k] = queue.then(async () => {
+      const out = await draw({ facts });
+      if (ink(cleanGrid(out.rows)) >= 8) return out;
+      log(`redraw: "${describeFacts(picture)}" came back blank`);
+      return draw({ facts });
+    }).catch((e) => { log(`error: ${e.message}`); return null; });
+    queue = drawings[k].then(() => undefined);
   });
 }
 
@@ -260,7 +269,11 @@ async function describe() {
   await sleep(1500);
   while (sent < pictures.length) {
     const out = await show();
-    if (!out) return;
+    if (!out) {
+      say(null);
+      await sleep(1500);
+      continue;
+    }
     await sleep(HOLD_MS);
     lower();
     say(null);

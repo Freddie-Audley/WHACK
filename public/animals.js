@@ -322,7 +322,6 @@ export function buildAnimals(view, v, add) {
         segs.push(seg);
       }
       const head = new THREE.Group(), skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), skin);
-      snowboard(head, -0.2);
       skull.scale.set(1.4, 0.75, 1);
       head.add(skull);
       for (const sz of [-1, 1]) { const eye = googly(0.09, 0.12, 0.15, sz * 0.2); eye.rotation.y = sz > 0 ? 0.8 : Math.PI - 0.8; head.add(eye); }

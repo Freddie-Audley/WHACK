@@ -18,6 +18,23 @@ export function buildAnimals(view, v, add) {
   // The extras never draw random numbers (wool colours go round by herd number), so learning the weather after the
   // animals leaves the herd where it was.
   const wool = [flat(0xe0575c), flat(0xf0c75e), flat(0x5aa9d6)], snowMat = flat(0xffffff), leaf = flat(0x5e9a4a), pale = flat(0xf6e7cf);
+  const skiGeo = new THREE.BoxGeometry(1, 0.06, 0.12), boardGeo = new THREE.BoxGeometry(0.9, 0.07, 0.38), bindingGeo = new THREE.BoxGeometry(0.2, 0.06, 0.1);
+  const snowboard = (parent, y = 0) => {
+    if (!snow) return;
+    const gear = new THREE.Group();
+    gear.position.y = y;
+    part(gear, boardGeo, wool[0], 0, 0.04, 0);
+    for (const x of [-0.2, 0.2]) part(gear, bindingGeo, dark, x, 0.1, 0);
+    parent.add(gear);
+  };
+  const cowSkis = (cow) => {
+    if (!snow) return;
+    for (const [i, z] of [-0.22, 0.22].entries()) {
+      const ski = part(cow, skiGeo, wool[i ? 2 : 0], 0, 0.04, z);
+      ski.scale.x = 1.7;
+      part(cow, bindingGeo, dark, 0.5, 0.1, z);
+    }
+  };
   const glow = new THREE.MeshStandardMaterial({ color: 0xfff6c0, emissive: 0xfff0a0, emissiveIntensity: 0.9, flatShading: true });
   const capGeo = new THREE.SphereGeometry(1, 7, 5), stickGeo = new THREE.CylinderGeometry(0.025, 0.025, 1, 4), leafGeo = new THREE.ConeGeometry(0.5, 0.2, 6);
   const bandGeo = new THREE.CylinderGeometry(1, 1, 0.3, 7), coneGeo = new THREE.ConeGeometry(0.95, 1.4, 6), bobbleGeo = new THREE.SphereGeometry(0.3, 5, 4), stripeGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.2, 7);
@@ -71,7 +88,11 @@ export function buildAnimals(view, v, add) {
     for (let i = 0; i < 6; i++) {
       const cow = new THREE.Group(), head = new THREE.Group(), legs = [];
       part(cow, bodyGeo, hide, 0, 0.85, 0);
-      for (const [sx, sz] of [[-0.5, -0.22], [0.5, -0.22], [-0.5, 0.22], [0.5, 0.22]]) legs.push(part(cow, legGeo, dark, sx, 0.5, sz));
+      cowSkis(cow);
+      for (const [sx, sz] of [[-0.5, -0.22], [0.5, -0.22], [-0.5, 0.22], [0.5, 0.22]]) {
+        const leg = part(cow, legGeo, dark, sx, 0.5, sz);
+        legs.push(leg);
+      }
       for (let k = 0; k < 3; k++) part(cow, new THREE.BoxGeometry(rand(0.25, 0.45), rand(0.2, 0.35), 0.72), dark, rand(-0.45, 0.45), rand(0.75, 1.0), 0);
       part(head, skullGeo, hide, 0.25, 0, 0);
       part(head, snoutGeo, nose, 0.52, -0.08, 0);
@@ -99,7 +120,7 @@ export function buildAnimals(view, v, add) {
       cow.position.set(x0, view.groundY(x0, z0), z0);
       cow.rotation.y = fy;
       place(cow);
-      const step = (t, k) => legs.forEach((l, j) => { l.rotation.z = Math.sin(t * 3 + p + (j % 3 ? 0 : Math.PI)) * k; }); // diagonal pairs together, like a proper walk
+      const step = (t, k) => legs.forEach((l, j) => { l.rotation.z = snow ? 0 : Math.sin(t * 3 + p + (j % 3 ? 0 : Math.PI)) * k; }); // diagonal pairs together, like a proper walk
       if (water) view.movers.push((t) => { // swimming: in up to the belly, chin up, drifting, legs paddling away under the surface
         cow.position.set(x0 + Math.sin(t * 0.2 + p) * 1.5, -0.6 + Math.sin(t * 1.5 + p) * 0.06, z0);
         head.rotation.z = 0.25;
@@ -152,6 +173,7 @@ export function buildAnimals(view, v, add) {
     const hankyGeo = new THREE.BoxGeometry(0.32, 0.06, 0.38), knotGeo = new THREE.SphereGeometry(0.045, 4, 3);
     for (let i = 0; i < 10; i++) {
       const fish = new THREE.Group();
+      snowboard(fish, -0.35);
       part(fish, bodyGeo, scales, 0, 0, 0).scale.set(1.6, 1, 0.6);
       const tail = part(fish, tailGeo, scales, -0.55, 0, 0); // fans out behind, its point buried in the body
       tail.rotation.z = -Math.PI / 2; tail.scale.z = 0.35;
@@ -198,6 +220,7 @@ export function buildAnimals(view, v, add) {
     const ringGeos = [0.42, 0.28, 0.14].map((r) => new THREE.TorusGeometry(r, 0.05, 4, 12));
     for (let i = 0; i < 4; i++) {
       const snail = new THREE.Group(), shell = new THREE.Group(), stalks = [];
+      snowboard(snail);
       const foot = part(snail, footGeo, skin, 0, 0.15, 0);
       part(shell, shellGeo, shellMat, 0, 0, 0).scale.z = 0.7;
       for (const sz of [-1, 1]) ringGeos.forEach((g, k) => part(shell, g, coil, 0.07 * k, -0.07 * k, sz * (0.44 + k * 0.04))); // the spiral: rings coiling in and down
@@ -298,6 +321,7 @@ export function buildAnimals(view, v, add) {
         segs.push(seg);
       }
       const head = new THREE.Group(), skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), skin);
+      snowboard(head, -0.2);
       skull.scale.set(1.4, 0.75, 1);
       head.add(skull);
       for (const sz of [-1, 1]) { const eye = googly(0.09, 0.12, 0.15, sz * 0.2); eye.rotation.y = sz > 0 ? 0.8 : Math.PI - 0.8; head.add(eye); }

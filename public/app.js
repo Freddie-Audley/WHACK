@@ -38,6 +38,10 @@ const log = (m) => {
   console.log(line);
   window.__TAURI__?.core.invoke("log", { line });
   if (m.startsWith("error") && !$("start").classList.contains("hide")) { $("nokey").textContent = line; $("nokey").style.display = "block"; }
+  if (m.startsWith("error") && $("start").classList.contains("hide")) {
+    $("game-error").textContent = "An AI request failed. Check your API key and internet connection, then press R to restart.";
+    $("game-error").hidden = false;
+  }
 };
 // The ambassador writes with no dashes, semicolons or colons: those become commas or full stops.
 // And it says one sentence at a time, whatever the model sent, without the odd stray </br> or } it tacks on.
@@ -228,7 +232,7 @@ async function describe() {
   await sleep(1500);
   while (sent < pictures.length) {
     const out = await show();
-    if (!out) continue;
+    if (!out) return;
     await sleep(HOLD_MS);
     lower();
     say(null);

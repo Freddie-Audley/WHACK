@@ -103,6 +103,7 @@
   #keys kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-right: 6px; padding: 0 5px; border-radius: 6px; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1; color: #1d1d3a; background: #fff; box-shadow: 0 1px 0 1px rgba(40,30,80,.15); }
   @media (pointer: coarse) { #keys { display: none; } }
   #nokey { margin-top: 12px; color: #c0392b; display: none; }
+  #game-error { position: fixed; left: 50%; bottom: 20px; z-index: 30; width: min(560px, calc(100vw - 32px)); padding: 14px 18px; border-radius: 12px; transform: translateX(-50%); background: #fff; color: #9c2c22; box-shadow: 0 4px 18px rgba(40,30,80,.2); text-align: center; }
   @media (max-width: 620px) {
     #editor { --board: min(calc(100vw - 32px), calc(100vh - 260px), 680px); }
     .editor-main { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
@@ -171,6 +172,7 @@
   <canvas id="preview" width="160" height="90"></canvas>
 </div>
 <img id="processed" alt="What the agent sees">
+<div id="game-error" role="alert" hidden></div>
 
 <div id="start">
   <div id="card">

@@ -329,8 +329,8 @@ console.error = (...a) => { origErr(...a); log("console.error: " + a.map(String)
 addEventListener("error", (e) => log(`error: ${e.message} (${e.filename}:${e.lineno})`));
 addEventListener("unhandledrejection", (e) => log(`error: ${e.reason?.message || e.reason} ${e.reason?.stack || ""}`));
 
-// Safari on iPhone ignores the viewport's user-scalable=no and zooms on a pinch anyway; it does honour this.
-addEventListener("gesturestart", (e) => e.preventDefault());
+// Pinch and double-tap zoom are blocked by the inline script at the top of index.html,
+// so it works from the first moment, even if a module here fails to load.
 
 addEventListener("keydown", (e) => {
   if (e.code === "KeyQ") { e.preventDefault(); window.__TAURI__?.core.invoke("quit"); return; }

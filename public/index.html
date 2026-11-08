@@ -11,6 +11,30 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<script>
+  // No zooming, anywhere. Inline and first, so it's on before anything else loads and even if
+  // a module fails (three.js comes from a CDN). The viewport's user-scalable=no and touch-action
+  // below cover most browsers, but Safari on iPhone ignores user-scalable=no on purpose, so
+  // pinches and double taps are cancelled here too. Page-level touch and wheel listeners are
+  // passive by default (they can't cancel anything), hence { passive: false }.
+  (() => {
+    const active = { passive: false };
+    const stop = (e) => e.preventDefault();
+    // A pinch is two fingers moving: cancel that and there's nothing to zoom with.
+    addEventListener("touchmove", (e) => { if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault(); }, active);
+    // Safari's own pinch events (iPhone, Mac Safari and the Mac app's WebKit view).
+    for (const type of ["gesturestart", "gesturechange", "gestureend"]) addEventListener(type, stop, active);
+    // A trackpad pinch in Chrome, Edge and Firefox arrives as a scroll-wheel event with Ctrl held.
+    addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, active);
+    // Double-tap to zoom on iPhone. Buttons and the like are left alone, so a quick second tap still clicks.
+    let lastTap = 0;
+    addEventListener("touchend", (e) => {
+      const now = e.timeStamp;
+      if (now - lastTap < 350 && e.touches.length === 0 && !e.target.closest?.("button, input, select, textarea, a, label")) e.preventDefault();
+      lastTap = now;
+    }, active);
+  })();
+</script>
 <style>
   * { box-sizing: border-box; }
   /* No pinch or double-tap zoom on phones; nothing here scrolls, so panning is all touch needs to do. */

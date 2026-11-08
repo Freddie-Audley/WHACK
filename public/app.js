@@ -371,6 +371,14 @@ async function shrinkWindow() {
   } catch (e) { log(`error: resize failed: ${e.message || e}`); }
 }
 
+// Build your world needs more room than the choices, so the window grows down for it and back on Back.
+async function buildingWindow(building) {
+  const t = window.__TAURI__;
+  if (!t) return;
+  try { await t.window.getCurrentWindow().setSize(new t.dpi.LogicalSize(520, building ? 560 : 505)); }
+  catch (e) { log(`error: resize failed: ${e.message || e}`); }
+}
+
 // Back to the menu: begin afresh (the reload shrinks the window). Reset replays the last menu choice.
 function menu() { q.delete("role"); location.href = location.pathname + (q.size ? `?${q}` : ""); }
 function reset() { q.set("role", role); location.search = `?${q}`; }
@@ -472,8 +480,8 @@ addEventListener("keydown", (e) => {
   $("startB").onclick = () => { clearCustomWorldQuery(); start("b"); };
   $("startE").onclick = () => { clearCustomWorldQuery(); earth(); };
   // Make your own new world: the picker takes the choices' place; Start begins as the alien in the world picked.
-  $("make-world").onclick = () => document.body.classList.add("building");
-  $("world-back").onclick = () => document.body.classList.remove("building");
+  $("make-world").onclick = () => { document.body.classList.add("building"); buildingWindow(true); };
+  $("world-back").onclick = () => { document.body.classList.remove("building"); buildingWindow(false); };
   $("world-start").onclick = () => {
     Object.assign(world.values, customWorldValues);
     q.set("world", "custom");

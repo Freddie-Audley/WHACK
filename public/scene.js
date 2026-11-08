@@ -153,7 +153,7 @@ const PEER = new THREE.Euler(0.12, 0.15, -0.2);
 // Without a board canvas the ambassador holds a telescope instead (the guesser).
 export class Scene extends WorldView {
   constructor(container, boardCanvas, hue) {
-    super(container);
+    super(container, { camera: [0, 2.7, 8.2], lookAt: [0, 2.3, 0] }); // framed high and a step back: room over the head for the speech bubble
     this.pose = "idle";
     this.buildAmbassador(boardCanvas, hue);
   }

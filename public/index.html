@@ -71,7 +71,7 @@
 
   #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; }
   #start.hide { display: none; }
-  /* The card fills the start window (520 by 505, see shrinkWindow) top to bottom, so the UFO stays put whatever is
+  /* The card fills the start window (520 by 505, see shrinkWindow; 560 while building a world) top to bottom, so the UFO stays put whatever is
      shown under the title; on a taller window it floats in the middle. */
   #card { min-height: 100%; padding: 0 20px 52px; display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* The title is on a sign the UFO in the snake's scene holds up (snake.js), which lines it up with this; the space
@@ -84,24 +84,24 @@
   body:not(.key) #startA, body:not(.key) #startB { opacity: .4; pointer-events: none; }
   #card { max-height: 100vh; overflow-y: auto; }
   #make-world { width: 100%; }
-  /* Build your world: in place of the choices once Make your own new world is pressed. One row per category, the
-     options as glass chips (the chosen ones solid, with a dark ring, like the editor's tools); Back and Start below. */
-  #world-picker { display: none; width: min(480px, calc(100vw - 40px)); text-align: left; visibility: hidden; }
+  /* Build your world: in place of the choices once Make your own new world is pressed. One row per category, its
+     options a pill-shaped segmented control (the chosen segments white, as macOS does it); Back and Start below. */
+  #world-picker { display: none; width: min(480px, calc(100vw - 40px)); margin-top: 14px; text-align: left; visibility: hidden; }
   body.building #choices { display: none; }
   body.building #world-picker { display: block; }
   body.ready #world-picker { visibility: visible; }
-  .category { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-  .category .name { flex: 0 0 62px; font-size: 13px; font-weight: 600; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
-  .chip { position: relative; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; color: #1d1d3a; background: rgba(255,255,255,.4); box-shadow: inset 0 0 0 1px rgba(255,255,255,.65); transition: background .15s, box-shadow .15s; }
-  .chip:hover { background: rgba(255,255,255,.65); }
-  .chip:has(input:checked) { background: rgba(255,255,255,.95); box-shadow: 0 0 0 1.5px #1d1d3a; }
+  /* The names make one column, as wide as the longest, so every control starts on the same line. */
+  #world-categories { display: grid; grid-template-columns: max-content 1fr; column-gap: 10px; row-gap: 6px; }
+  .category { display: grid; grid-template-columns: subgrid; grid-column: span 2; align-items: center; }
+  .category .name { font-size: 13px; font-weight: 500; }
+  .chips { display: flex; padding: 3px; border-radius: 999px; background: rgba(29,29,58,.07); box-shadow: inset 0 0 0 .5px rgba(29,29,58,.05); }
+  .chip { position: relative; flex: 1 1 auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; line-height: 16px; text-align: center; white-space: nowrap; color: #1d1d3a; transition: background .15s, box-shadow .15s; }
+  .chip:hover { background: rgba(255,255,255,.4); }
+  .chip:has(input:checked) { background: #fff; box-shadow: 0 1px 3px rgba(40,30,80,.18), 0 0 0 .5px rgba(40,30,80,.06); }
   .chip:has(input:focus-visible) { outline: 2px solid #5b4ab8; outline-offset: 1px; }
   .chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; }
-  .picker-buttons { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
-  .picker-buttons h2 { margin: 0; font-size: 14px; font-weight: 600; }
-  .picker-buttons div { display: flex; gap: 8px; }
-  .picker-buttons button { padding: 6px 16px; font-size: 14px; }
+  .picker-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .picker-buttons button { padding: 6px 16px; font-size: 13px; }
   #snakes { position: fixed; inset: 0; z-index: -1; }
   /* Every button in the app: a liquid-glass pill (or circle, when square), like the panels. */
   button { --back: rgba(255,255,255,.45); font: inherit; font-size: 15px; font-weight: 500; padding: 9px 20px; border: 0; border-radius: 999px; cursor: default; color: #1d1d3a; background: var(--back); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 6px 20px rgba(40,30,80,.10), inset 0 0 0 1px rgba(255,255,255,.55), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(255,255,255,.2); transition: background .15s, transform .15s, box-shadow .15s; }
@@ -196,14 +196,11 @@
       <button id="startE">Be Earth</button>
       <button id="make-world" type="button">Make your own new world</button>
     </div>
-    <section id="world-picker" aria-labelledby="world-picker-title">
+    <section id="world-picker" aria-label="Build your world">
       <div id="world-categories"></div>
       <div class="picker-buttons">
-        <h2 id="world-picker-title">Build your world</h2>
-        <div>
-          <button id="world-back" type="button">Back</button>
-          <button id="world-start" type="button">Start as the alien</button>
-        </div>
+        <button id="world-back" type="button">Back</button>
+        <button id="world-start" type="button">Start as the alien</button>
       </div>
     </section>
     <div id="nokey">No ANTHROPIC_API_KEY found in .env</div>

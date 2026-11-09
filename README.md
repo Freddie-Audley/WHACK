@@ -1,5 +1,6 @@
 # First Contact
-By whack_a_snake
+Winning sumbission to WHACK, by whack_a_snake
+
 
 ## Problem Statement
 
